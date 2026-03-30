@@ -3,7 +3,7 @@ const SKIP_TAGS = new Set([
   'SELECT', 'BUTTON', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS',
 ]);
 
-const MIN_TEXT_LENGTH = 15;
+const MIN_TEXT_LENGTH = 30; // 提高門檻，避免翻譯導覽列短文字
 const TRANSLATED_ATTR = 'data-imt-done';
 
 export function scanParagraphs(root: Document | Element = document): Element[] {
@@ -16,6 +16,10 @@ export function scanParagraphs(root: Document | Element = document): Element[] {
         const el = node as Element;
         if (SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
         if (el.hasAttribute(TRANSLATED_ATTR)) return NodeFilter.FILTER_REJECT;
+        // 跳過導覽、側邊欄、頁首頁尾
+        if (el.closest('nav, header, footer, aside, [role="navigation"], [role="banner"]')) {
+          return NodeFilter.FILTER_REJECT;
+        }
         const tag = el.tagName;
         if (['P', 'H1', 'H2', 'H3', 'H4', 'LI', 'BLOCKQUOTE', 'TD', 'TH'].includes(tag)) {
           const text = el.textContent?.trim() || '';

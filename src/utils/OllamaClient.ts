@@ -13,8 +13,9 @@ export interface TranslateResponse {
 const DEFAULT_MODEL = 'qwen3:8b';
 const OLLAMA_BASE_URL = 'http://localhost:11434';
 
+// /no_think 關閉 Qwen3 思考模式，避免 <think>...</think> 汙染回應
 const SYSTEM_PROMPT =
-  '你是專業翻譯引擎。將以下內容直譯為繁體中文。保留技術術語原文（括號標注）。不解釋、不加備注、只輸出譯文。';
+  '/no_think 你是專業翻譯引擎。將以下內容直譯為繁體中文。保留技術術語原文（括號標注）。不解釋、不加備注、只輸出譯文。';
 
 export async function checkOllamaHealth(): Promise<boolean> {
   try {
@@ -51,7 +52,9 @@ export async function translate(req: TranslateRequest): Promise<string> {
 
   if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
   const data = await res.json();
-  return data.response?.trim() || '';
+  // 移除 Qwen3 思考模式殘留的 <think>...</think> 標籤
+  const raw = data.response?.trim() || '';
+  return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
 export async function translateBatch(texts: string[], model?: string): Promise<string[]> {
