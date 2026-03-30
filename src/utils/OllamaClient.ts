@@ -48,5 +48,8 @@ export async function translate(req: TranslateRequest): Promise<string> {
   const data = await res.json();
   // 移除殘留的 <think>...</think> 標籤（雙重保險）
   const raw = data.response?.trim() || '';
-  return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/\s*\/no_think\b/gi, '')
+    .trim();
 }
