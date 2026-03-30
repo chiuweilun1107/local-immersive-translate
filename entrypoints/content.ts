@@ -5,6 +5,7 @@ const MAX_CONCURRENT = 2; // 同時最多 2 個 Ollama 請求
 
 let isEnabled = false;
 let currentModel = 'qwen3:8b';
+let currentMode: 'bilingual' | 'translation_only' = 'bilingual';
 let observer: MutationObserver | null = null;
 let intersectionObserver: IntersectionObserver | null = null;
 
@@ -19,6 +20,7 @@ export default defineContentScript({
       if (msg.type === 'SET_ENABLED') {
         isEnabled = msg.enabled;
         currentModel = msg.model || 'qwen3:8b';
+        currentMode = msg.mode || 'bilingual';
         if (isEnabled) {
           startTranslation();
         } else {
@@ -27,9 +29,10 @@ export default defineContentScript({
       }
     });
 
-    chrome.storage.local.get(['imt_enabled', 'imt_model'], (result) => {
+    chrome.storage.local.get(['imt_enabled', 'imt_model', 'imt_mode'], (result) => {
       isEnabled = result.imt_enabled ?? false;
       currentModel = result.imt_model ?? 'qwen3:8b';
+      currentMode = result.imt_mode ?? 'bilingual';
       if (isEnabled) startTranslation();
     });
   },
@@ -116,15 +119,15 @@ async function processElement(el: Element): Promise<void> {
     placeholder.remove();
 
     if (response?.translated) {
-      injectTranslation(el, response.translated);
+      injectTranslation(el, response.translated, currentMode);
     } else if (response?.error) {
-      console.error('[IMT] Translation error:', response.error);
-      el.removeAttribute('data-imt-done'); // 允許重試
+      console.error('[IMT] Ollama error:', response.error);
+      placeholder.textContent = `[IMT Error] ${response.error}`;
     }
   } catch (err) {
-    placeholder.remove();
-    el.removeAttribute('data-imt-done');
-    console.error('[IMT] Send message failed:', err);
+    console.error('[IMT] sendMessage failed:', err);
+    placeholder.textContent = `[IMT] ${String(err)}`;
+    // 不移除 data-imt-done，避免無限重試跳動
   } finally {
     activeCount--;
     drainQueue();

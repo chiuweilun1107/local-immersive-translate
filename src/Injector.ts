@@ -1,28 +1,25 @@
 const IMT_CLASS = 'imt-translation';
+const IMT_LOADING_CLASS = 'imt-loading';
 
+// 極簡樣式：繼承頁面所有字體、顏色、行高，讓翻譯自然融入
 const STYLES = `
   .${IMT_CLASS} {
     display: block !important;
-    margin: 6px 0 4px !important;
-    padding: 5px 10px !important;
-    font-size: 0.88em !important;
-    color: #1a1a1a !important;
-    background: rgba(240, 247, 255, 0.97) !important;
-    border-left: 3px solid #1a73e8 !important;
-    border-radius: 0 4px 4px 0 !important;
+    margin-top: 4px !important;
     font-family: inherit !important;
-    line-height: 1.6 !important;
-    box-sizing: border-box !important;
-    position: relative !important;
-    z-index: 9999 !important;
-    pointer-events: none !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    line-height: inherit !important;
+    color: inherit !important;
+    opacity: 0.85;
   }
-  @media (prefers-color-scheme: dark) {
-    .${IMT_CLASS} {
-      color: #e8e8e8 !important;
-      background: rgba(26, 60, 100, 0.95) !important;
-      border-left-color: #6ba4ff !important;
-    }
+  .${IMT_LOADING_CLASS} {
+    display: block !important;
+    margin-top: 4px !important;
+    font-family: inherit !important;
+    font-size: 0.85em !important;
+    color: inherit !important;
+    opacity: 0.4;
   }
 `;
 
@@ -37,22 +34,35 @@ function injectGlobalStyles(): void {
   stylesInjected = true;
 }
 
-export function injectTranslation(el: Element, translatedText: string): void {
+export function injectTranslation(el: Element, translatedText: string, mode: 'bilingual' | 'translation_only' = 'bilingual'): void {
   injectGlobalStyles();
 
+  // 移除舊譯文
   const existing = el.nextElementSibling;
-  if (existing?.classList.contains(IMT_CLASS)) {
-    existing.remove();
-  }
+  if (existing?.classList.contains(IMT_CLASS)) existing.remove();
 
-  const div = document.createElement('div');
-  div.className = IMT_CLASS;
-  div.textContent = translatedText;
-  el.insertAdjacentElement('afterend', div);
+  if (mode === 'translation_only') {
+    // 保存原文以便切回
+    if (!el.hasAttribute('data-imt-original')) {
+      el.setAttribute('data-imt-original', el.innerHTML);
+    }
+    el.textContent = translatedText;
+  } else {
+    // 雙語：譯文插在原文後面，繼承頁面樣式
+    const div = document.createElement('div');
+    div.className = IMT_CLASS;
+    div.textContent = translatedText;
+    el.insertAdjacentElement('afterend', div);
+  }
 }
 
 export function removeAllTranslations(): void {
-  document.querySelectorAll(`.${IMT_CLASS}`).forEach((el) => el.remove());
+  // 還原 translation_only 模式改動的原文
+  document.querySelectorAll('[data-imt-original]').forEach((el) => {
+    el.innerHTML = el.getAttribute('data-imt-original')!;
+    el.removeAttribute('data-imt-original');
+  });
+  document.querySelectorAll(`.${IMT_CLASS}, .${IMT_LOADING_CLASS}`).forEach((el) => el.remove());
   document.getElementById('imt-styles')?.remove();
   stylesInjected = false;
 }
@@ -60,9 +70,8 @@ export function removeAllTranslations(): void {
 export function injectLoadingPlaceholder(el: Element): HTMLDivElement {
   injectGlobalStyles();
   const div = document.createElement('div');
-  div.className = IMT_CLASS;
-  div.style.opacity = '0.6';
-  div.textContent = '翻譯中…';
+  div.className = IMT_LOADING_CLASS;
+  div.textContent = '…';
   el.insertAdjacentElement('afterend', div);
   return div;
 }
