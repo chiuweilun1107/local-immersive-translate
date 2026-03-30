@@ -11,6 +11,7 @@ export default function App() {
   const [mode, setMode] = useState<Mode>('bilingual');
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     chrome.storage.local.get(['imt_enabled', 'imt_model', 'imt_mode'], (result) => {
@@ -125,10 +126,14 @@ export default function App() {
         <span className="row-value">繁體中文</span>
       </div>
 
+      {toast && <div className="toast">{toast}</div>}
+
       <footer>
         <button className="footer-btn" onClick={checkHealth}>重新連線</button>
         <button className="footer-btn" onClick={async () => {
           await chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' });
+          setToast('快取已清除');
+          setTimeout(() => setToast(null), 2000);
         }}>清除快取</button>
       </footer>
     </div>

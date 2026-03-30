@@ -167,3 +167,13 @@ footer {
   transition: all 0.15s;
 }
 .footer-btn:hover { background: #eee; color: #333; }
+
+.toast {
+  background: #34c759;
+  color: #fff;
+  text-align: center;
+  padding: 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
