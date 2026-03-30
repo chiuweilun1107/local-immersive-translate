@@ -7,7 +7,6 @@ export interface TranslateRequest {
 const DEFAULT_MODEL = 'qwen3:8b';
 const OLLAMA_BASE_URL = 'http://localhost:11434';
 
-// 純系統角色提示，不含 /no_think（/no_think 必須放在 user prompt，不是 system prompt）
 const SYSTEM_PROMPT =
   '你是專業翻譯引擎。將以下內容直譯為繁體中文。保留技術術語原文（括號標注）。不解釋、不加備注、只輸出譯文。';
 
@@ -38,9 +37,9 @@ export async function translate(req: TranslateRequest): Promise<string> {
     body: JSON.stringify({
       model,
       system: SYSTEM_PROMPT,
-      // /no_think 必須在 user prompt 最前面，才能關閉 Qwen3 思考模式
-      prompt: '/no_think ' + req.text,
+      prompt: req.text,
       stream: false,
+      think: false, // 關閉 Qwen3 思考模式（Ollama 原生選項）
       options: { temperature: 0.1, num_predict: 512 },
     }),
   });
