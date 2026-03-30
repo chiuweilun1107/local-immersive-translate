@@ -1,4 +1,4 @@
-import { checkOllamaHealth, translate, translateBatch, listModels } from '../src/utils/OllamaClient';
+import { checkOllamaHealth, translate, listModels } from '../src/utils/OllamaClient';
 import { getCache, setCache, clearAllCache } from '../src/utils/CacheManager';
 
 export default defineBackground(() => {
@@ -29,39 +29,6 @@ async function handleMessage(message: { type: string; [key: string]: unknown }) 
       const translated = await translate({ text, model });
       await setCache(lang, text, translated);
       return { translated, cached: false };
-    }
-
-    case 'TRANSLATE_BATCH': {
-      const { texts, lang = 'zh-TW', model } = message as {
-        texts: string[];
-        lang?: string;
-        model?: string;
-      };
-      // Check cache for each
-      const results: string[] = [];
-      const uncachedIndexes: number[] = [];
-      const uncachedTexts: string[] = [];
-
-      for (let i = 0; i < texts.length; i++) {
-        const cached = await getCache(lang, texts[i]);
-        if (cached) {
-          results[i] = cached;
-        } else {
-          uncachedIndexes.push(i);
-          uncachedTexts.push(texts[i]);
-        }
-      }
-
-      if (uncachedTexts.length > 0) {
-        const translated = await translateBatch(uncachedTexts, model);
-        for (let j = 0; j < uncachedIndexes.length; j++) {
-          const idx = uncachedIndexes[j];
-          results[idx] = translated[j];
-          await setCache(lang, texts[idx], translated[j]);
-        }
-      }
-
-      return { results };
     }
 
     case 'CLEAR_CACHE':

@@ -4,18 +4,12 @@ export interface TranslateRequest {
   model?: string;
 }
 
-export interface TranslateResponse {
-  translated: string;
-  model: string;
-  cached?: boolean;
-}
-
 const DEFAULT_MODEL = 'qwen3:8b';
 const OLLAMA_BASE_URL = 'http://localhost:11434';
 
-// /no_think 關閉 Qwen3 思考模式，避免 <think>...</think> 汙染回應
+// 純系統角色提示，不含 /no_think（/no_think 必須放在 user prompt，不是 system prompt）
 const SYSTEM_PROMPT =
-  '/no_think 你是專業翻譯引擎。將以下內容直譯為繁體中文。保留技術術語原文（括號標注）。不解釋、不加備注、只輸出譯文。';
+  '你是專業翻譯引擎。將以下內容直譯為繁體中文。保留技術術語原文（括號標注）。不解釋、不加備注、只輸出譯文。';
 
 export async function checkOllamaHealth(): Promise<boolean> {
   try {
@@ -44,7 +38,8 @@ export async function translate(req: TranslateRequest): Promise<string> {
     body: JSON.stringify({
       model,
       system: SYSTEM_PROMPT,
-      prompt: req.text,
+      // /no_think 必須在 user prompt 最前面，才能關閉 Qwen3 思考模式
+      prompt: '/no_think ' + req.text,
       stream: false,
       options: { temperature: 0.1, num_predict: 512 },
     }),
@@ -52,28 +47,7 @@ export async function translate(req: TranslateRequest): Promise<string> {
 
   if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
   const data = await res.json();
-  // 移除 Qwen3 思考模式殘留的 <think>...</think> 標籤
+  // 移除殘留的 <think>...</think> 標籤（雙重保險）
   const raw = data.response?.trim() || '';
   return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-}
-
-export async function translateBatch(texts: string[], model?: string): Promise<string[]> {
-  if (texts.length === 0) return [];
-  if (texts.length === 1) {
-    const result = await translate({ text: texts[0], model });
-    return [result];
-  }
-
-  const joined = texts.join('|||');
-  const result = await translate({
-    text: `翻譯以下段落（用|||分隔，保持相同分隔符輸出）：\n${joined}`,
-    model,
-  });
-
-  const parts = result.split('|||');
-  // 若分割數量不符，fallback 逐一翻譯
-  if (parts.length !== texts.length) {
-    return Promise.all(texts.map((t) => translate({ text: t, model })));
-  }
-  return parts.map((p) => p.trim());
 }

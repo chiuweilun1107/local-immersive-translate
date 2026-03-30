@@ -1,19 +1,20 @@
-import { scanParagraphs, markTranslated } from '../src/DOMScanner';
+import { scanParagraphs, markTranslated, isTranslated } from '../src/DOMScanner';
 import { injectTranslation, removeAllTranslations, injectLoadingPlaceholder } from '../src/Injector';
 
-const BATCH_SIZE = 8;
-const BATCH_DELAY_MS = 200;
+const MAX_CONCURRENT = 2; // 同時最多 2 個 Ollama 請求
 
 let isEnabled = false;
 let currentModel = 'qwen3:8b';
 let observer: MutationObserver | null = null;
-let batchTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingElements: Element[] = [];
+let intersectionObserver: IntersectionObserver | null = null;
+
+// 並發控制
+let activeCount = 0;
+const queue: Element[] = [];
 
 export default defineContentScript({
   matches: ['<all_urls>'],
   main() {
-    // Listen for messages from popup / background
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === 'SET_ENABLED') {
         isEnabled = msg.enabled;
@@ -26,7 +27,6 @@ export default defineContentScript({
       }
     });
 
-    // Restore state from storage on page load
     chrome.storage.local.get(['imt_enabled', 'imt_model'], (result) => {
       isEnabled = result.imt_enabled ?? false;
       currentModel = result.imt_model ?? 'qwen3:8b';
@@ -36,66 +36,102 @@ export default defineContentScript({
 });
 
 function startTranslation(): void {
+  setupIntersectionObserver();
+  // 掃描已在 viewport 的段落
   const paragraphs = scanParagraphs();
-  queueElements(paragraphs);
-  startObserver();
+  paragraphs.forEach((el) => observeElement(el));
+  startMutationObserver();
 }
 
 function stopTranslation(): void {
   observer?.disconnect();
   observer = null;
-  if (batchTimer) clearTimeout(batchTimer);
-  pendingElements = [];
+  intersectionObserver?.disconnect();
+  intersectionObserver = null;
+  queue.length = 0;
+  activeCount = 0;
   removeAllTranslations();
-  // Clear translated markers
   document.querySelectorAll('[data-imt-done]').forEach((el) => {
     el.removeAttribute('data-imt-done');
   });
 }
 
-function queueElements(elements: Element[]): void {
-  pendingElements.push(...elements);
-  scheduleBatch();
+function setupIntersectionObserver(): void {
+  if (intersectionObserver) return;
+  intersectionObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const el = entry.target as Element;
+          intersectionObserver?.unobserve(el);
+          enqueueElement(el);
+        }
+      });
+    },
+    { rootMargin: '100px', threshold: 0.1 }
+  );
 }
 
-function scheduleBatch(): void {
-  if (batchTimer) return;
-  batchTimer = setTimeout(processBatch, BATCH_DELAY_MS);
+function observeElement(el: Element): void {
+  if (isTranslated(el)) return;
+  intersectionObserver?.observe(el);
 }
 
-async function processBatch(): Promise<void> {
-  batchTimer = null;
-  if (!isEnabled || pendingElements.length === 0) return;
+function enqueueElement(el: Element): void {
+  if (isTranslated(el)) return;
+  queue.push(el);
+  drainQueue();
+}
 
-  const batch = pendingElements.splice(0, BATCH_SIZE);
-  const placeholders = batch.map((el) => injectLoadingPlaceholder(el));
+function drainQueue(): void {
+  while (activeCount < MAX_CONCURRENT && queue.length > 0) {
+    const el = queue.shift()!;
+    if (isTranslated(el)) continue; // 跳過已處理的
+    processElement(el);
+  }
+}
 
-  const texts = batch.map((el) => el.textContent?.trim() || '');
+async function processElement(el: Element): Promise<void> {
+  if (isTranslated(el)) return;
+  activeCount++;
+
+  const text = el.textContent?.trim() || '';
+  if (!text) {
+    activeCount--;
+    drainQueue();
+    return;
+  }
+
+  const placeholder = injectLoadingPlaceholder(el);
+  markTranslated(el); // 先標記，防止重複加入 queue
 
   try {
     const response = await chrome.runtime.sendMessage({
-      type: 'TRANSLATE_BATCH',
-      texts,
+      type: 'TRANSLATE',
+      text,
       lang: 'zh-TW',
       model: currentModel,
     });
 
-    if (response?.results) {
-      batch.forEach((el, i) => {
-        placeholders[i].remove();
-        injectTranslation(el, response.results[i]);
-        markTranslated(el);
-      });
+    placeholder.remove();
+
+    if (response?.translated) {
+      injectTranslation(el, response.translated);
+    } else if (response?.error) {
+      console.error('[IMT] Translation error:', response.error);
+      el.removeAttribute('data-imt-done'); // 允許重試
     }
   } catch (err) {
-    placeholders.forEach((p) => p.remove());
-    console.error('[IMT] Translation failed:', err);
+    placeholder.remove();
+    el.removeAttribute('data-imt-done');
+    console.error('[IMT] Send message failed:', err);
+  } finally {
+    activeCount--;
+    drainQueue();
   }
-
-  if (pendingElements.length > 0) scheduleBatch();
 }
 
-function startObserver(): void {
+function startMutationObserver(): void {
   if (observer) return;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -104,8 +140,8 @@ function startObserver(): void {
     debounceTimer = setTimeout(() => {
       if (!isEnabled) return;
       const newElements = scanParagraphs();
-      if (newElements.length > 0) queueElements(newElements);
-    }, 50);
+      newElements.forEach((el) => observeElement(el));
+    }, 300);
   });
 
   observer.observe(document.body, { childList: true, subtree: true });
