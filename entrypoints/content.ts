@@ -8,6 +8,7 @@ let currentModel = 'qwen3:8b';
 let currentMode: 'bilingual' | 'translation_only' = 'bilingual';
 let observer: MutationObserver | null = null;
 let intersectionObserver: IntersectionObserver | null = null;
+let deepScanTimer: ReturnType<typeof setInterval> | null = null;
 
 // 並發控制
 let activeCount = 0;
@@ -40,10 +41,25 @@ export default defineContentScript({
 
 function startTranslation(): void {
   setupIntersectionObserver();
-  // 掃描已在 viewport 的段落
   const paragraphs = scanParagraphs();
   paragraphs.forEach((el) => observeElement(el));
   startMutationObserver();
+  startDeepScan(); // 補抓 Shadow DOM 延遲渲染的內容
+}
+
+// 啟動後 30 秒內每 2 秒深掃，補抓 Shadow DOM 裡延遲出現的元素
+function startDeepScan(): void {
+  if (deepScanTimer) return;
+  let count = 0;
+  deepScanTimer = setInterval(() => {
+    if (!isEnabled || count >= 15) {
+      clearInterval(deepScanTimer!);
+      deepScanTimer = null;
+      return;
+    }
+    count++;
+    scanParagraphs().forEach((el) => observeElement(el));
+  }, 2000);
 }
 
 function stopTranslation(): void {
@@ -51,6 +67,7 @@ function stopTranslation(): void {
   observer = null;
   intersectionObserver?.disconnect();
   intersectionObserver = null;
+  if (deepScanTimer) { clearInterval(deepScanTimer); deepScanTimer = null; }
   queue.length = 0;
   activeCount = 0;
   removeAllTranslations();
