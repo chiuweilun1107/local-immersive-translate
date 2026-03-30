@@ -19,11 +19,14 @@ async function handleMessage(message: { type: string; [key: string]: unknown }) 
       return { models: await listModels() };
 
     case 'TRANSLATE': {
-      const { text, lang = 'zh-TW', model } = message as {
+      const { text: rawText, lang = 'zh-TW', model } = message as {
         text: string;
         lang?: string;
         model?: string;
       };
+      // 清理 slash commands（如 /no_think）避免混入翻譯文字
+      const text = rawText.replace(/\s*\/\w+/g, '').trim();
+      if (!text) return { translated: '', cached: false };
       const cached = await getCache(lang, text);
       if (cached) return { translated: cached, cached: true };
       const translated = await translate({ text, model });

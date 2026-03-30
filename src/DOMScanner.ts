@@ -8,10 +8,11 @@ const TRANSLATED_ATTR = 'data-imt-done';
 const SCAN_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'LI', 'BLOCKQUOTE', 'TD', 'TH']);
 
 // 網站專屬 selector：用於抓 TreeWalker 掃不到的標題元素
+// 注意：必須指向最葉層的文字節點容器，避免 textContent 混入 badge/hidden 元素
 const SITE_SELECTORS = [
-  'div[slot="title"]',          // Reddit shreddit post titles
-  'div[slot="text-body"] > p',  // Reddit shreddit post body
-  '[data-testid="post-title"]', // Reddit old/various
+  'div[slot="title"] > a',      // Reddit shreddit: 只取標題 <a>，排除 badge 子元素
+  'div[slot="text-body"] > p',  // Reddit shreddit post body paragraphs
+  '[data-testid="post-title"] > a', // Reddit old design
 ];
 
 export function scanParagraphs(root: Document | Element = document): Element[] {
