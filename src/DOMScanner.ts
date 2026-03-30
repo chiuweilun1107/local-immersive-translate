@@ -7,10 +7,39 @@ const MIN_TEXT_LENGTH = 20;
 const TRANSLATED_ATTR = 'data-imt-done';
 const SCAN_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'LI', 'BLOCKQUOTE', 'TD', 'TH']);
 
+// 網站專屬 selector：用於抓 TreeWalker 掃不到的標題元素
+const SITE_SELECTORS = [
+  'div[slot="title"]',          // Reddit shreddit post titles
+  'div[slot="text-body"] > p',  // Reddit shreddit post body
+  '[data-testid="post-title"]', // Reddit old/various
+];
+
 export function scanParagraphs(root: Document | Element = document): Element[] {
   const results: Element[] = [];
-  _scanRoot(root instanceof Document ? root.body : root, results);
+  const rootEl = root instanceof Document ? root.body : root;
+  _scanRoot(rootEl, results);
+  _scanSiteSelectors(rootEl, results);
   return results;
+}
+
+function _scanSiteSelectors(root: Element, results: Element[]): void {
+  const seen = new Set(results);
+  SITE_SELECTORS.forEach((selector) => {
+    try {
+      root.querySelectorAll(selector).forEach((el) => {
+        if (seen.has(el)) return;
+        if (el.hasAttribute(TRANSLATED_ATTR)) return;
+        if (el.closest('nav, header, footer, aside, [role="navigation"], [role="banner"]')) return;
+        const text = el.textContent?.trim() || '';
+        if (text.length >= MIN_TEXT_LENGTH && isMainlyLatin(text)) {
+          results.push(el);
+          seen.add(el);
+        }
+      });
+    } catch {
+      // ignore invalid selectors
+    }
+  });
 }
 
 function _scanRoot(root: Element | ShadowRoot, results: Element[]): void {
