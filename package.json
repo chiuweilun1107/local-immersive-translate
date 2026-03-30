@@ -1,0 +1,31 @@
+{
+  "name": "local-immersive-translate",
+  "version": "0.1.0",
+  "description": "本地端沈浸式翻譯 Chrome Extension，基於 Ollama + Qwen3 本地 LLM",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare"
+  },
+  "keywords": [
+    "chrome-extension",
+    "immersive-translate",
+    "ollama",
+    "llm"
+  ],
+  "author": "chiuweilun1107",
+  "license": "MIT",
+  "packageManager": "pnpm@10.26.1",
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@wxt-dev/module-react": "^1.2.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "typescript": "^6.0.2",
+    "wxt": "^0.20.20"
+  }
+}
