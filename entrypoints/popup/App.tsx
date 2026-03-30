@@ -13,12 +13,23 @@ export default function App() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Phase 2 feature flags
+  const [selectionEnabled, setSelectionEnabled] = useState(true);
+  const [hoverEnabled, setHoverEnabled] = useState(true);
+  const [inputEnabled, setInputEnabled] = useState(true);
+
   useEffect(() => {
-    chrome.storage.local.get(['imt_enabled', 'imt_model', 'imt_mode'], (result) => {
-      setEnabled(result.imt_enabled ?? false);
-      setModel(result.imt_model ?? 'qwen3:8b');
-      setMode(result.imt_mode ?? 'bilingual');
-    });
+    chrome.storage.local.get(
+      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input'],
+      (result) => {
+        setEnabled(result.imt_enabled ?? false);
+        setModel(result.imt_model ?? 'qwen3:8b');
+        setMode(result.imt_mode ?? 'bilingual');
+        setSelectionEnabled(result.imt_selection ?? true);
+        setHoverEnabled(result.imt_hover ?? true);
+        setInputEnabled(result.imt_input ?? true);
+      }
+    );
     checkHealth();
   }, []);
 
@@ -60,6 +71,17 @@ export default function App() {
     }
   }
 
+  async function toggleFeature(feature: 'selection' | 'hover' | 'input', current: boolean) {
+    const next = !current;
+    const storageKey = `imt_${feature}` as const;
+    await chrome.storage.local.set({ [storageKey]: next });
+    await sendToContentScript({ type: 'SET_FEATURE', feature, enabled: next });
+
+    if (feature === 'selection') setSelectionEnabled(next);
+    else if (feature === 'hover') setHoverEnabled(next);
+    else if (feature === 'input') setInputEnabled(next);
+  }
+
   const displayModels = availableModels.length > 0 ? availableModels : MODELS;
 
   return (
@@ -74,7 +96,7 @@ export default function App() {
 
       {ollamaOk === false && (
         <div className="warning">
-          ⚠️ Ollama 未啟動，請執行 <code>ollama serve</code>
+          Ollama 未啟動，請執行 <code>ollama serve</code>
         </div>
       )}
 
@@ -124,6 +146,51 @@ export default function App() {
       <div className="row">
         <span className="row-label">目標語言</span>
         <span className="row-value">繁體中文</span>
+      </div>
+
+      {/* 進階功能 */}
+      <div className="section-label">進階功能</div>
+      <div className="toggle-row">
+        <div className="toggle-info">
+          <span className="toggle-label">選取翻譯</span>
+          <span className="toggle-desc">選取文字即時翻譯</span>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={selectionEnabled}
+            onChange={() => toggleFeature('selection', selectionEnabled)}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="toggle-row">
+        <div className="toggle-info">
+          <span className="toggle-label">懸停翻譯</span>
+          <span className="toggle-desc">按住 Alt 懸停段落</span>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={hoverEnabled}
+            onChange={() => toggleFeature('hover', hoverEnabled)}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="toggle-row">
+        <div className="toggle-info">
+          <span className="toggle-label">輸入框翻譯</span>
+          <span className="toggle-desc">連按三個空格翻譯</span>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={inputEnabled}
+            onChange={() => toggleFeature('input', inputEnabled)}
+          />
+          <span className="slider" />
+        </label>
       </div>
 
       {toast && <div className="toast">{toast}</div>}

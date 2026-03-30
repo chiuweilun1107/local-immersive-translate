@@ -1,5 +1,8 @@
 import { scanParagraphs, markTranslated, isTranslated } from '../src/DOMScanner';
 import { injectTranslation, removeAllTranslations, injectLoadingPlaceholder } from '../src/Injector';
+import { startSelectionTranslate, stopSelectionTranslate } from '../src/features/SelectionTranslate';
+import { startHoverTranslate, stopHoverTranslate } from '../src/features/HoverTranslate';
+import { startInputTranslate, stopInputTranslate } from '../src/features/InputTranslate';
 
 const MAX_CONCURRENT = 2; // 同時最多 2 個 Ollama 請求
 
@@ -9,6 +12,11 @@ let currentMode: 'bilingual' | 'translation_only' = 'bilingual';
 let observer: MutationObserver | null = null;
 let intersectionObserver: IntersectionObserver | null = null;
 let deepScanTimer: ReturnType<typeof setInterval> | null = null;
+
+// Phase 2 feature flags
+let selectionEnabled = true;
+let hoverEnabled = true;
+let inputEnabled = true;
 
 // 並發控制
 let activeCount = 0;
@@ -28,16 +36,60 @@ export default defineContentScript({
           stopTranslation();
         }
       }
+
+      if (msg.type === 'SET_FEATURE') {
+        const { feature, enabled } = msg as { feature: string; enabled: boolean };
+        if (feature === 'selection') {
+          selectionEnabled = enabled;
+          if (enabled) startSelectionTranslate(() => currentModel);
+          else stopSelectionTranslate();
+        } else if (feature === 'hover') {
+          hoverEnabled = enabled;
+          if (enabled) startHoverTranslate(() => currentModel);
+          else stopHoverTranslate();
+        } else if (feature === 'input') {
+          inputEnabled = enabled;
+          if (enabled) startInputTranslate(() => currentModel);
+          else stopInputTranslate();
+        }
+      }
     });
 
-    chrome.storage.local.get(['imt_enabled', 'imt_model', 'imt_mode'], (result) => {
-      isEnabled = result.imt_enabled ?? false;
-      currentModel = result.imt_model ?? 'qwen3:8b';
-      currentMode = result.imt_mode ?? 'bilingual';
-      if (isEnabled) startTranslation();
+    // Alt+A keyboard shortcut: toggle full-page translation
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.altKey && e.key === 'a') {
+        isEnabled = !isEnabled;
+        chrome.storage.local.set({ imt_enabled: isEnabled, imt_model: currentModel, imt_mode: currentMode });
+        if (isEnabled) {
+          startTranslation();
+        } else {
+          stopTranslation();
+        }
+      }
     });
+
+    chrome.storage.local.get(
+      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input'],
+      (result) => {
+        isEnabled = result.imt_enabled ?? false;
+        currentModel = result.imt_model ?? 'qwen3:8b';
+        currentMode = result.imt_mode ?? 'bilingual';
+        selectionEnabled = result.imt_selection ?? true;
+        hoverEnabled = result.imt_hover ?? true;
+        inputEnabled = result.imt_input ?? true;
+
+        if (isEnabled) startTranslation();
+        initPhase2Features();
+      }
+    );
   },
 });
+
+function initPhase2Features(): void {
+  if (selectionEnabled) startSelectionTranslate(() => currentModel);
+  if (hoverEnabled) startHoverTranslate(() => currentModel);
+  if (inputEnabled) startInputTranslate(() => currentModel);
+}
 
 function startTranslation(): void {
   setupIntersectionObserver();
