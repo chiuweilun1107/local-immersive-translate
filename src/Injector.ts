@@ -1,17 +1,25 @@
 const IMT_CLASS = 'imt-translation';
 const IMT_LOADING_CLASS = 'imt-loading';
 
-// 極簡樣式：繼承頁面所有字體、顏色、行高，讓翻譯自然融入
 const STYLES = `
   .${IMT_CLASS} {
     display: block !important;
     margin-top: 4px !important;
+    padding: 3px 8px !important;
     font-family: inherit !important;
     font-size: inherit !important;
     font-weight: inherit !important;
     line-height: inherit !important;
     color: inherit !important;
-    opacity: 0.85;
+    background: rgba(255, 230, 0, 0.15) !important;
+    border-left: 3px solid rgba(255, 180, 0, 0.7) !important;
+    border-radius: 0 3px 3px 0 !important;
+  }
+  @media (prefers-color-scheme: dark) {
+    .${IMT_CLASS} {
+      background: rgba(255, 220, 0, 0.1) !important;
+      border-left-color: rgba(255, 200, 0, 0.5) !important;
+    }
   }
   .${IMT_LOADING_CLASS} {
     display: block !important;
@@ -19,7 +27,7 @@ const STYLES = `
     font-family: inherit !important;
     font-size: 0.85em !important;
     color: inherit !important;
-    opacity: 0.4;
+    opacity: 0.35;
   }
 `;
 
