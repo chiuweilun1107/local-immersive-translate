@@ -1,5 +1,5 @@
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const CACHE_PREFIX = 'imt_';
+const CACHE_PREFIX = 'imt_cache_'; // 與設定 key (imt_enabled, imt_model...) 區分
 
 interface CacheEntry {
   value: string;
