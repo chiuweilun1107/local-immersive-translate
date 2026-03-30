@@ -2,21 +2,26 @@ const IMT_CLASS = 'imt-translation';
 
 const STYLES = `
   .${IMT_CLASS} {
-    display: block;
-    margin-top: 4px;
-    padding: 4px 8px;
-    font-size: 0.9em;
-    color: #555;
-    border-left: 2px solid #ccc;
-    background: rgba(0,0,0,0.03);
-    font-family: inherit;
-    line-height: 1.6;
+    display: block !important;
+    margin: 6px 0 4px !important;
+    padding: 5px 10px !important;
+    font-size: 0.88em !important;
+    color: #1a1a1a !important;
+    background: rgba(240, 247, 255, 0.97) !important;
+    border-left: 3px solid #1a73e8 !important;
+    border-radius: 0 4px 4px 0 !important;
+    font-family: inherit !important;
+    line-height: 1.6 !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    z-index: 9999 !important;
+    pointer-events: none !important;
   }
   @media (prefers-color-scheme: dark) {
     .${IMT_CLASS} {
-      color: #aaa;
-      border-left-color: #555;
-      background: rgba(255,255,255,0.05);
+      color: #e8e8e8 !important;
+      background: rgba(26, 60, 100, 0.95) !important;
+      border-left-color: #6ba4ff !important;
     }
   }
 `;
@@ -35,7 +40,6 @@ function injectGlobalStyles(): void {
 export function injectTranslation(el: Element, translatedText: string): void {
   injectGlobalStyles();
 
-  // Remove existing translation if re-translating
   const existing = el.nextElementSibling;
   if (existing?.classList.contains(IMT_CLASS)) {
     existing.remove();
@@ -57,7 +61,7 @@ export function injectLoadingPlaceholder(el: Element): HTMLDivElement {
   injectGlobalStyles();
   const div = document.createElement('div');
   div.className = IMT_CLASS;
-  div.style.opacity = '0.5';
+  div.style.opacity = '0.6';
   div.textContent = '翻譯中…';
   el.insertAdjacentElement('afterend', div);
   return div;

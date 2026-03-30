@@ -3,12 +3,18 @@ const SKIP_TAGS = new Set([
   'SELECT', 'BUTTON', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS',
 ]);
 
-const MIN_TEXT_LENGTH = 30; // 提高門檻，避免翻譯導覽列短文字
+const MIN_TEXT_LENGTH = 20;
 const TRANSLATED_ATTR = 'data-imt-done';
+const SCAN_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'LI', 'BLOCKQUOTE', 'TD', 'TH']);
 
 export function scanParagraphs(root: Document | Element = document): Element[] {
   const results: Element[] = [];
-  const walker = document.createTreeWalker(
+  _scanRoot(root instanceof Document ? root.body : root, results);
+  return results;
+}
+
+function _scanRoot(root: Element | ShadowRoot, results: Element[]): void {
+  const walker = (root.ownerDocument ?? document).createTreeWalker(
     root,
     NodeFilter.SHOW_ELEMENT,
     {
@@ -16,12 +22,10 @@ export function scanParagraphs(root: Document | Element = document): Element[] {
         const el = node as Element;
         if (SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
         if (el.hasAttribute(TRANSLATED_ATTR)) return NodeFilter.FILTER_REJECT;
-        // 跳過導覽、側邊欄、頁首頁尾
         if (el.closest('nav, header, footer, aside, [role="navigation"], [role="banner"]')) {
           return NodeFilter.FILTER_REJECT;
         }
-        const tag = el.tagName;
-        if (['P', 'H1', 'H2', 'H3', 'H4', 'LI', 'BLOCKQUOTE', 'TD', 'TH'].includes(tag)) {
+        if (SCAN_TAGS.has(el.tagName)) {
           const text = el.textContent?.trim() || '';
           if (text.length >= MIN_TEXT_LENGTH && isMainlyLatin(text)) {
             return NodeFilter.FILTER_ACCEPT;
@@ -35,8 +39,15 @@ export function scanParagraphs(root: Document | Element = document): Element[] {
   let node: Node | null;
   while ((node = walker.nextNode())) {
     results.push(node as Element);
+    // 進入 Shadow DOM
+    const shadow = (node as Element).shadowRoot;
+    if (shadow) _scanRoot(shadow, results);
   }
-  return results;
+
+  // 掃描此層直接子元素中有 shadow root 的宿主
+  root.querySelectorAll('*').forEach((el) => {
+    if (el.shadowRoot) _scanRoot(el.shadowRoot, results);
+  });
 }
 
 export function markTranslated(el: Element): void {
@@ -47,7 +58,6 @@ export function isTranslated(el: Element): boolean {
   return el.hasAttribute(TRANSLATED_ATTR);
 }
 
-// 判斷文字是否主要為拉丁字母（需要翻譯）
 function isMainlyLatin(text: string): boolean {
   const latinCount = (text.match(/[a-zA-Z]/g) || []).length;
   return latinCount / text.length > 0.4;
