@@ -104,27 +104,51 @@ function showButton(el: HTMLElement, getModel: () => string): void {
     if (!rawText) { console.log('[IMT Input] empty text, abort'); removeButton(); return; }
 
     try {
-      console.log('[IMT Input] sending translate request...');
       const response = await chrome.runtime.sendMessage({
         type: 'TRANSLATE',
         text: rawText,
         lang: 'en',
         model: getModel(),
       });
-      console.log('[IMT Input] response:', response);
-
-      removeButton();
 
       if (response?.translated) {
-        el.focus();
-        await new Promise(r => setTimeout(r, 50));
-        replaceInputText(el, response.translated);
-        console.log('[IMT Input] text replaced');
+        // Try direct replacement first (works for <input>/<textarea>)
+        const isNative = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+        if (isNative) {
+          removeButton();
+          replaceInputText(el, response.translated);
+        } else {
+          // For contenteditable (Lexical/ProseMirror), copy to clipboard + show result
+          await navigator.clipboard.writeText(response.translated);
+          btn.textContent = '已複製 ✓';
+          btn.style.background = '#34c759';
+          btn.style.opacity = '1';
+
+          // Show translated text below button
+          const tip = document.createElement('div');
+          tip.style.cssText = `
+            position: fixed; z-index: 2147483647;
+            left: ${btn.style.left}; top: ${parseInt(btn.style.top) + 36}px;
+            max-width: 300px; padding: 8px 12px;
+            background: #fff; color: #1a1a1a; font-size: 13px; line-height: 1.5;
+            border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+            border: 1px solid #e0e0e0; word-break: break-word;
+          `;
+          tip.textContent = response.translated;
+          document.body.appendChild(tip);
+
+          setTimeout(() => { removeButton(); tip.remove(); }, 4000);
+        }
       } else if (response?.error) {
+        btn.textContent = '翻譯失敗';
+        btn.style.background = '#ff3b30';
+        setTimeout(() => removeButton(), 2000);
         console.error('[IMT Input] error:', response.error);
       }
     } catch (err) {
-      removeButton();
+      btn.textContent = '翻譯失敗';
+      btn.style.background = '#ff3b30';
+      setTimeout(() => removeButton(), 2000);
       console.error('[IMT Input] sendMessage failed:', err);
     }
   });
