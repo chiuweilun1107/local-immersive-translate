@@ -1,6 +1,8 @@
 const DATA_ORIGINAL = 'data-imt-original';
+const BTN_ID = 'imt-translate-btn';
 
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+let currentTarget: HTMLElement | null = null;
 
 function getInputText(el: HTMLElement): string {
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
@@ -27,30 +29,47 @@ function isInputTarget(el: EventTarget | null): el is HTMLElement {
   return false;
 }
 
-function hasTrailingDoubleSpace(el: HTMLElement): boolean {
+function hasTrailingSpace(el: HTMLElement): boolean {
   const text = getInputText(el);
-  return text.length >= 2 && text.slice(-2) === '  ';
+  return text.length >= 1 && text.slice(-1) === ' ';
 }
 
-export function startInputTranslate(getModel: () => string): void {
-  if (keydownHandler) return;
+function showButton(el: HTMLElement, getModel: () => string): void {
+  removeButton();
+  currentTarget = el;
 
-  keydownHandler = async (e: KeyboardEvent) => {
-    if (e.key !== ' ') return;
-    // composedPath()[0] 穿透 Shadow DOM 拿到真實 target
-    const target = (e.composedPath?.()[0] ?? e.target) as EventTarget;
-    if (!isInputTarget(target)) return;
+  const btn = document.createElement('div');
+  btn.id = BTN_ID;
+  btn.textContent = '中 → 英';
+  btn.style.cssText = `
+    position: fixed;
+    z-index: 2147483647;
+    padding: 4px 10px;
+    background: #ff6b9d;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    user-select: none;
+    transition: opacity 0.15s;
+  `;
 
-    // Detect 3rd consecutive space: current input already ends with "  " and user hits space again
-    if (!hasTrailingDoubleSpace(target as HTMLElement)) return;
+  // Position at bottom-right of input element
+  const rect = el.getBoundingClientRect();
+  btn.style.left = `${Math.min(rect.right - 80, window.innerWidth - 90)}px`;
+  btn.style.top = `${rect.bottom + 6}px`;
 
+  btn.addEventListener('mousedown', async (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    removeButton();
 
-    const el = target as HTMLElement;
     const rawText = getInputText(el).trimEnd(); // strip trailing spaces
     if (!rawText) return;
 
-    // Save original text before overwriting
     el.setAttribute(DATA_ORIGINAL, rawText);
     setInputText(el, '翻譯中...');
 
@@ -58,20 +77,54 @@ export function startInputTranslate(getModel: () => string): void {
       const response = await chrome.runtime.sendMessage({
         type: 'TRANSLATE',
         text: rawText,
-        lang: 'zh-TW',
+        lang: 'en', // 中文 → 英文
         model: getModel(),
       });
 
       if (response?.translated) {
         setInputText(el, response.translated);
       } else if (response?.error) {
-        // Restore original on error
         setInputText(el, el.getAttribute(DATA_ORIGINAL) ?? rawText);
         console.error('[IMT Input] error:', response.error);
       }
     } catch (err) {
       setInputText(el, el.getAttribute(DATA_ORIGINAL) ?? rawText);
       console.error('[IMT Input] sendMessage failed:', err);
+    }
+  });
+
+  document.documentElement.appendChild(btn);
+
+  // Auto-hide on blur or next non-space keydown
+  const hide = () => { removeButton(); el.removeEventListener('blur', hide); };
+  el.addEventListener('blur', hide);
+}
+
+function removeButton(): void {
+  const btn = document.getElementById(BTN_ID);
+  if (btn) btn.remove();
+  currentTarget = null;
+}
+
+export function startInputTranslate(getModel: () => string): void {
+  if (keydownHandler) return;
+
+  keydownHandler = (e: KeyboardEvent) => {
+    // Hide button on any non-space key
+    if (e.key !== ' ') {
+      removeButton();
+      return;
+    }
+
+    // composedPath()[0] 穿透 Shadow DOM 拿到真實 target
+    const target = (e.composedPath?.()[0] ?? e.target) as EventTarget;
+    if (!isInputTarget(target)) return;
+
+    const el = target as HTMLElement;
+
+    // Show button when user types 2nd space (input already ends with one space)
+    if (hasTrailingSpace(el)) {
+      showButton(el, getModel);
     }
   };
 
@@ -83,4 +136,5 @@ export function stopInputTranslate(): void {
     document.removeEventListener('keydown', keydownHandler, true);
     keydownHandler = null;
   }
+  removeButton();
 }

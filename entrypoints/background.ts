@@ -29,7 +29,7 @@ async function handleMessage(message: { type: string; [key: string]: unknown }) 
       if (!text) return { translated: '', cached: false };
       const cached = await getCache(lang, text);
       if (cached) return { translated: cached, cached: true };
-      const translated = await translate({ text, model });
+      const translated = await translate({ text, targetLang: lang, model });
       await setCache(lang, text, translated);
       return { translated, cached: false };
     }

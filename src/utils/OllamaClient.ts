@@ -7,8 +7,11 @@ export interface TranslateRequest {
 const DEFAULT_MODEL = 'qwen3:8b';
 const OLLAMA_BASE_URL = 'http://localhost:11434';
 
-const SYSTEM_PROMPT =
+const SYSTEM_PROMPT_ZH =
   '你是專業翻譯引擎。將以下內容直譯為繁體中文。保留技術術語原文（括號標注）。不解釋、不加備注、只輸出譯文。';
+
+const SYSTEM_PROMPT_EN =
+  'You are a professional translation engine. Translate the following content into natural English. Do not explain, do not add notes, output only the translation.';
 
 export async function checkOllamaHealth(): Promise<boolean> {
   try {
@@ -31,12 +34,13 @@ export async function listModels(): Promise<string[]> {
 
 export async function translate(req: TranslateRequest): Promise<string> {
   const model = req.model || DEFAULT_MODEL;
+  const systemPrompt = req.targetLang === 'en' ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH;
   const res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       prompt: req.text,
       stream: false,
       think: false, // 關閉 Qwen3 思考模式（Ollama 原生選項）
