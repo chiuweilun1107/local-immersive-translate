@@ -55,9 +55,10 @@ export default defineContentScript({
       }
     });
 
-    // Alt+A keyboard shortcut: toggle full-page translation
+    // Option+A (Mac) / Alt+A 快捷鍵：切換全頁翻譯
+    // 用 e.code 而非 e.key，避免 Mac 上 ⌥+A 產生特殊字元 'å'
     document.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.altKey && e.key === 'a') {
+      if (e.altKey && e.code === 'KeyA') {
         isEnabled = !isEnabled;
         chrome.storage.local.set({ imt_enabled: isEnabled, imt_model: currentModel, imt_mode: currentMode });
         if (isEnabled) {
