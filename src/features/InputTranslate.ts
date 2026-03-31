@@ -92,8 +92,11 @@ function showButton(el: HTMLElement, getModel: () => string): void {
     const rawText = getInputText(el).trimEnd(); // strip trailing spaces
     if (!rawText) return;
 
-    el.setAttribute(DATA_ORIGINAL, rawText);
-    setInputText(el, '翻譯中...');
+    // Show loading inline without execCommand (just visual feedback)
+    const isNative = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+    if (isNative) {
+      (el as HTMLInputElement).value = '翻譯中...';
+    }
 
     try {
       const response = await chrome.runtime.sendMessage({
@@ -103,14 +106,29 @@ function showButton(el: HTMLElement, getModel: () => string): void {
         model: getModel(),
       });
 
-      if (response?.translated) {
-        setInputText(el, response.translated);
-      } else if (response?.error) {
-        setInputText(el, el.getAttribute(DATA_ORIGINAL) ?? rawText);
+      const result = response?.translated ?? (el.getAttribute(DATA_ORIGINAL) ?? rawText);
+      // Re-focus before execCommand (async breaks focus state)
+      el.focus();
+      if (isNative) {
+        (el as HTMLInputElement).value = result;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        document.execCommand('selectAll', false, undefined);
+        document.execCommand('insertText', false, result);
+      }
+
+      if (response?.error) {
         console.error('[IMT Input] error:', response.error);
       }
     } catch (err) {
-      setInputText(el, el.getAttribute(DATA_ORIGINAL) ?? rawText);
+      el.focus();
+      if (isNative) {
+        (el as HTMLInputElement).value = rawText;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        document.execCommand('selectAll', false, undefined);
+        document.execCommand('insertText', false, rawText);
+      }
       console.error('[IMT Input] sendMessage failed:', err);
     }
   });
