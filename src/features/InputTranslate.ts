@@ -75,11 +75,29 @@ function showPanel(el: HTMLElement, translated: string): void {
     overflow: hidden;
   `;
 
-  // Header
+  // Header (draggable)
   const header = document.createElement('div');
-  header.style.cssText = 'padding: 8px 12px; background: #f8f8f8; border-bottom: 1px solid #eee; font-size: 11px; color: #999; font-weight: 600; letter-spacing: 0.5px;';
+  header.style.cssText = 'padding: 8px 12px; background: #f8f8f8; border-bottom: 1px solid #eee; font-size: 11px; color: #999; font-weight: 600; letter-spacing: 0.5px; cursor: grab; user-select: none;';
   header.textContent = '中 → 英 翻譯預覽';
   panel.appendChild(header);
+
+  // Drag logic
+  let dragging = false, dx = 0, dy = 0;
+  header.addEventListener('mousedown', (e) => {
+    dragging = true;
+    dx = e.clientX - panel.getBoundingClientRect().left;
+    dy = e.clientY - panel.getBoundingClientRect().top;
+    header.style.cursor = 'grabbing';
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    panel.style.left = `${e.clientX - dx}px`;
+    panel.style.top = `${e.clientY - dy}px`;
+  });
+  document.addEventListener('mouseup', () => {
+    dragging = false;
+    header.style.cursor = 'grab';
+  });
 
   // Translation text
   const body = document.createElement('div');
