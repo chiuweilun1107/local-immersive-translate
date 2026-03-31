@@ -80,6 +80,16 @@ export function removeAllTranslations(): void {
   stylesInjected = false;
 }
 
+export function injectStreamSpan(el: Element): HTMLElement {
+  injectGlobalStyles();
+  removeExistingBilingual(el);
+  const span = document.createElement('span');
+  span.className = IMT_CLASS;
+  span.textContent = '';
+  el.appendChild(span);
+  return span;
+}
+
 export function injectLoadingPlaceholder(el: Element): HTMLElement {
   injectGlobalStyles();
   removeExistingBilingual(el);

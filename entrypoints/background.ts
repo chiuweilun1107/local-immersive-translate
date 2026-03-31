@@ -1,4 +1,4 @@
-import { checkOllamaHealth, translate, listModels } from '../src/utils/OllamaClient';
+import { checkOllamaHealth, translate, translateStream, listModels } from '../src/utils/OllamaClient';
 import { getCache, setCache, clearAllCache } from '../src/utils/CacheManager';
 
 export default defineBackground(() => {
@@ -7,6 +7,35 @@ export default defineBackground(() => {
       sendResponse({ error: err.message });
     });
     return true; // keep message channel open for async
+  });
+
+  // Streaming translation via long-lived port
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== 'imt-stream') return;
+    port.onMessage.addListener(async (msg) => {
+      if (msg.type !== 'TRANSLATE_STREAM') return;
+      const { text: rawText, lang = 'zh-TW', model } = msg;
+      const text = rawText.replace(/\s*\/\w+/g, '').trim();
+      if (!text) { port.postMessage({ done: true, full: '' }); return; }
+
+      // Check cache first
+      const cached = await getCache(lang, text);
+      if (cached) { port.postMessage({ done: true, full: cached, cached: true }); return; }
+
+      try {
+        let full = '';
+        for await (const token of translateStream({ text, targetLang: lang, model })) {
+          full += token;
+          port.postMessage({ token, done: false });
+        }
+        // Clean up output
+        full = full.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\s*\/no_think\b/gi, '').trim();
+        await setCache(lang, text, full);
+        port.postMessage({ done: true, full });
+      } catch (err) {
+        port.postMessage({ done: true, error: (err as Error).message });
+      }
+    });
   });
 });
 

@@ -17,10 +17,11 @@ export default function App() {
   const [selectionEnabled, setSelectionEnabled] = useState(true);
   const [hoverEnabled, setHoverEnabled] = useState(true);
   const [inputEnabled, setInputEnabled] = useState(true);
+  const [streamEnabled, setStreamEnabled] = useState(true);
 
   useEffect(() => {
     chrome.storage.local.get(
-      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input'],
+      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input', 'imt_stream'],
       (result) => {
         setEnabled(result.imt_enabled ?? false);
         setModel(result.imt_model ?? 'qwen3:8b');
@@ -28,6 +29,7 @@ export default function App() {
         setSelectionEnabled(result.imt_selection ?? true);
         setHoverEnabled(result.imt_hover ?? true);
         setInputEnabled(result.imt_input ?? true);
+        setStreamEnabled(result.imt_stream ?? true);
       }
     );
     checkHealth();
@@ -80,6 +82,7 @@ export default function App() {
     if (feature === 'selection') setSelectionEnabled(next);
     else if (feature === 'hover') setHoverEnabled(next);
     else if (feature === 'input') setInputEnabled(next);
+    else if (feature === 'stream') setStreamEnabled(next);
   }
 
   const displayModels = availableModels.length > 0 ? availableModels : MODELS;
@@ -174,6 +177,20 @@ export default function App() {
             type="checkbox"
             checked={hoverEnabled}
             onChange={() => toggleFeature('hover', hoverEnabled)}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="toggle-row">
+        <div className="toggle-info">
+          <span className="toggle-label">串流顯示</span>
+          <span className="toggle-desc">翻譯逐字浮現</span>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={streamEnabled}
+            onChange={() => toggleFeature('stream', streamEnabled)}
           />
           <span className="slider" />
         </label>

@@ -1,5 +1,5 @@
 import { scanParagraphs, markTranslated, isTranslated } from '../src/DOMScanner';
-import { injectTranslation, removeAllTranslations, injectLoadingPlaceholder } from '../src/Injector';
+import { injectTranslation, removeAllTranslations, injectLoadingPlaceholder, injectStreamSpan } from '../src/Injector';
 import { startSelectionTranslate, stopSelectionTranslate } from '../src/features/SelectionTranslate';
 import { startHoverTranslate, stopHoverTranslate } from '../src/features/HoverTranslate';
 import { startInputTranslate, stopInputTranslate } from '../src/features/InputTranslate';
@@ -17,6 +17,7 @@ let deepScanTimer: ReturnType<typeof setInterval> | null = null;
 let selectionEnabled = true;
 let hoverEnabled = true;
 let inputEnabled = true;
+let streamEnabled = true;
 
 // 並發控制
 let activeCount = 0;
@@ -51,6 +52,8 @@ export default defineContentScript({
           inputEnabled = enabled;
           if (enabled) startInputTranslate(() => currentModel);
           else stopInputTranslate();
+        } else if (feature === 'stream') {
+          streamEnabled = enabled;
         }
       }
     });
@@ -70,7 +73,7 @@ export default defineContentScript({
     });
 
     chrome.storage.local.get(
-      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input'],
+      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input', 'imt_stream'],
       (result) => {
         isEnabled = result.imt_enabled ?? false;
         currentModel = result.imt_model ?? 'qwen3:8b';
@@ -78,6 +81,7 @@ export default defineContentScript({
         selectionEnabled = result.imt_selection ?? true;
         hoverEnabled = result.imt_hover ?? true;
         inputEnabled = result.imt_input ?? true;
+        streamEnabled = result.imt_stream ?? true;
 
         if (isEnabled) startTranslation();
         initPhase2Features();
@@ -175,8 +179,49 @@ async function processElement(el: Element): Promise<void> {
     return;
   }
 
-  const placeholder = injectLoadingPlaceholder(el);
   markTranslated(el); // 先標記，防止重複加入 queue
+
+  if (streamEnabled && currentMode === 'bilingual') {
+    processElementStream(el, text);
+  } else {
+    processElementNormal(el, text);
+  }
+}
+
+function processElementStream(el: Element, text: string): void {
+  const span = injectStreamSpan(el);
+  const port = chrome.runtime.connect({ name: 'imt-stream' });
+
+  port.onMessage.addListener((msg) => {
+    if (msg.token) {
+      // Clean thinking tags on the fly
+      span.textContent = (span.textContent + msg.token)
+        .replace(/<think>[\s\S]*?<\/think>/g, '')
+        .replace(/\s*\/no_think\b/gi, '');
+    }
+    if (msg.done) {
+      port.disconnect();
+      if (msg.error) {
+        span.textContent = `[IMT Error] ${msg.error}`;
+      } else if (msg.full) {
+        // Final clean replacement
+        span.textContent = msg.full;
+      }
+      activeCount--;
+      drainQueue();
+    }
+  });
+
+  port.postMessage({
+    type: 'TRANSLATE_STREAM',
+    text,
+    lang: 'zh-TW',
+    model: currentModel,
+  });
+}
+
+async function processElementNormal(el: Element, text: string): Promise<void> {
+  const placeholder = injectLoadingPlaceholder(el);
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -197,7 +242,6 @@ async function processElement(el: Element): Promise<void> {
   } catch (err) {
     console.error('[IMT] sendMessage failed:', err);
     placeholder.textContent = `[IMT] ${String(err)}`;
-    // 不移除 data-imt-done，避免無限重試跳動
   } finally {
     activeCount--;
     drainQueue();

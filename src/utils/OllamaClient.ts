@@ -32,6 +32,44 @@ export async function listModels(): Promise<string[]> {
   }
 }
 
+export async function* translateStream(req: TranslateRequest): AsyncGenerator<string> {
+  const model = req.model || DEFAULT_MODEL;
+  const systemPrompt = req.targetLang === 'en' ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH;
+  const res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      system: systemPrompt,
+      prompt: req.text,
+      stream: true,
+      think: false,
+      options: { temperature: 0.1, num_predict: 512 },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.response) yield data.response;
+        if (data.done) return;
+      } catch { /* skip malformed */ }
+    }
+  }
+}
+
 export async function translate(req: TranslateRequest): Promise<string> {
   const model = req.model || DEFAULT_MODEL;
   const systemPrompt = req.targetLang === 'en' ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH;
