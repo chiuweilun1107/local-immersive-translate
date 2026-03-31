@@ -10,6 +10,7 @@ let getModel: () => string = () => 'qwen3:8b';
 let lastText = '';
 let cache = new Map<string, string>();
 let pendingText = '';
+let isUpdating = false;
 
 export function startYouTubeSubtitle(modelGetter: () => string): void {
   if (active) return;
@@ -79,6 +80,7 @@ function startObserving(container: Element): void {
   console.log('[IMT YT] Observing captions');
 
   observer = new MutationObserver(() => {
+    if (isUpdating) return; // skip our own DOM changes
     handleCaptionChange(container);
   });
 
@@ -86,8 +88,8 @@ function startObserving(container: Element): void {
 }
 
 function handleCaptionChange(container: Element): void {
-  // Get all caption segments
-  const segments = container.querySelectorAll('.ytp-caption-segment');
+  // Get only YouTube's original segments (exclude our translations)
+  const segments = container.querySelectorAll(`.ytp-caption-segment:not(.${TRANS_CLASS}-text)`);
   if (segments.length === 0) {
     removeTranslations();
     lastText = '';
@@ -98,21 +100,22 @@ function handleCaptionChange(container: Element): void {
   if (!text || text === lastText) return;
   lastText = text;
 
-  // Remove old translation
+  // Remove old translation (guard against re-entrant mutations)
+  isUpdating = true;
   removeTranslations();
 
   // Find the caption window to append to
   const captionWindow = container.querySelector('.caption-window');
-  if (!captionWindow) return;
+  if (!captionWindow) { isUpdating = false; return; }
 
-  // Create translation line matching YouTube's structure
+  // Create translation line
   const transLine = document.createElement('span');
   transLine.className = `caption-visual-line ${TRANS_CLASS}`;
   transLine.style.cssText = 'display: block;';
 
   const transSegment = document.createElement('span');
-  transSegment.className = 'ytp-caption-segment';
-  transSegment.style.cssText = 'color: #ffe066 !important; font-size: 0.9em;';
+  transSegment.className = `${TRANS_CLASS}-text`;
+  transSegment.style.cssText = 'color: #ffe066 !important; font-size: 0.9em; background: rgba(8,8,8,0.75); padding: 1px 4px;';
 
   // Check cache
   const cached = cache.get(text);
@@ -125,6 +128,7 @@ function handleCaptionChange(container: Element): void {
 
   transLine.appendChild(transSegment);
   captionWindow.appendChild(transLine);
+  isUpdating = false;
 }
 
 async function translateText(text: string, el: HTMLElement): Promise<void> {
