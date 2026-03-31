@@ -37,20 +37,22 @@ export function startInputTranslate(getModel: () => string): void {
 
   keydownHandler = async (e: KeyboardEvent) => {
     if (e.key !== ' ') return;
-    const target = e.target;
+    // composedPath()[0] 穿透 Shadow DOM 拿到真實 target
+    const target = (e.composedPath?.()[0] ?? e.target) as EventTarget;
     if (!isInputTarget(target)) return;
 
     // Detect 3rd consecutive space: current input already ends with "  " and user hits space again
-    if (!hasTrailingDoubleSpace(target)) return;
+    if (!hasTrailingDoubleSpace(target as HTMLElement)) return;
 
     e.preventDefault();
 
-    const rawText = getInputText(target).trimEnd(); // strip trailing spaces
+    const el = target as HTMLElement;
+    const rawText = getInputText(el).trimEnd(); // strip trailing spaces
     if (!rawText) return;
 
     // Save original text before overwriting
-    target.setAttribute(DATA_ORIGINAL, rawText);
-    setInputText(target, '翻譯中...');
+    el.setAttribute(DATA_ORIGINAL, rawText);
+    setInputText(el, '翻譯中...');
 
     try {
       const response = await chrome.runtime.sendMessage({
@@ -61,14 +63,14 @@ export function startInputTranslate(getModel: () => string): void {
       });
 
       if (response?.translated) {
-        setInputText(target, response.translated);
+        setInputText(el, response.translated);
       } else if (response?.error) {
         // Restore original on error
-        setInputText(target, target.getAttribute(DATA_ORIGINAL) ?? rawText);
+        setInputText(el, el.getAttribute(DATA_ORIGINAL) ?? rawText);
         console.error('[IMT Input] error:', response.error);
       }
     } catch (err) {
-      setInputText(target, target.getAttribute(DATA_ORIGINAL) ?? rawText);
+      setInputText(el, el.getAttribute(DATA_ORIGINAL) ?? rawText);
       console.error('[IMT Input] sendMessage failed:', err);
     }
   };
