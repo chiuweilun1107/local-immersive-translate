@@ -181,7 +181,7 @@ export default function App() {
       <div className="toggle-row">
         <div className="toggle-info">
           <span className="toggle-label">輸入框翻譯</span>
-          <span className="toggle-desc">連按三個空格翻譯</span>
+          <span className="toggle-desc">⌥+Enter 中文翻英文</span>
         </div>
         <label className="switch">
           <input
