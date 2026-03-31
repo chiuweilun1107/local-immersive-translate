@@ -67,9 +67,10 @@ function removeButton(): void {
 function showButton(el: HTMLElement, getModel: () => string): void {
   removeButton();
 
-  const btn = document.createElement('div');
+  const btn = document.createElement('button');
   btn.id = BTN_ID;
-  btn.innerHTML = '<span style="pointer-events:none;">中 → 英</span>';
+  btn.textContent = '中 → 英';
+  btn.type = 'button';
   btn.style.cssText = `
     position: fixed;
     z-index: 2147483647;
@@ -79,24 +80,23 @@ function showButton(el: HTMLElement, getModel: () => string): void {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 13px;
     font-weight: 600;
+    border: none;
     border-radius: 14px;
     cursor: pointer;
     box-shadow: 0 2px 12px rgba(0,0,0,0.25);
     user-select: none;
-    pointer-events: auto;
     left: ${Math.min(lastMouseX + 12, window.innerWidth - 100)}px;
     top: ${Math.min(lastMouseY - 36, window.innerHeight - 40)}px;
   `;
 
-  // Use onclick (simplest, most reliable)
-  btn.onclick = async (e) => {
+  btn.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Visual feedback: keep button visible, show loading
-    btn.innerHTML = '<span style="pointer-events:none;">翻譯中...</span>';
+    // Visual feedback
+    btn.textContent = '翻譯中...';
+    btn.disabled = true;
     btn.style.opacity = '0.7';
-    btn.style.pointerEvents = 'none';
 
     const rawText = getInputText(el).trimEnd();
     if (!rawText) { removeButton(); return; }
@@ -123,7 +123,7 @@ function showButton(el: HTMLElement, getModel: () => string): void {
       removeButton();
       console.error('[IMT Input] sendMessage failed:', err);
     }
-  };
+  });
 
   document.body.appendChild(btn);
 }
