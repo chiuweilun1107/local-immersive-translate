@@ -1,38 +1,24 @@
-// YouTube Subtitle Translation — inject into YouTube's own caption container
+// YouTube Subtitle Translation — inject into YouTube's caption DOM
 
 const TRANS_CLASS = 'imt-yt-trans';
 const STYLE_ID = 'imt-yt-style';
 
 let active = false;
 let observer: MutationObserver | null = null;
-let navObserver: MutationObserver | null = null;
+let observeTarget: Element | null = null;
 let getModel: () => string = () => 'qwen3:8b';
 let lastText = '';
 let cache = new Map<string, string>();
-let pendingText = '';
-let isUpdating = false;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function startYouTubeSubtitle(modelGetter: () => string): void {
   if (active) return;
   if (!location.hostname.includes('youtube.com')) return;
   active = true;
   getModel = modelGetter;
-
   injectStyles();
   tryObserve();
-
-  // YouTube SPA navigation
   window.addEventListener('yt-navigate-finish', onNavigate);
-
-  // Fallback: URL change detection
-  let lastUrl = location.href;
-  navObserver = new MutationObserver(() => {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      onNavigate();
-    }
-  });
-  navObserver.observe(document, { childList: true, subtree: true });
 }
 
 export function stopYouTubeSubtitle(): void {
@@ -40,8 +26,7 @@ export function stopYouTubeSubtitle(): void {
   window.removeEventListener('yt-navigate-finish', onNavigate);
   observer?.disconnect();
   observer = null;
-  navObserver?.disconnect();
-  navObserver = null;
+  observeTarget = null;
   removeTranslations();
   lastText = '';
 }
@@ -50,6 +35,7 @@ function onNavigate(): void {
   if (!active) return;
   observer?.disconnect();
   observer = null;
+  observeTarget = null;
   removeTranslations();
   lastText = '';
   setTimeout(() => tryObserve(), 1500);
@@ -57,42 +43,51 @@ function onNavigate(): void {
 
 function tryObserve(): void {
   if (!active || observer) return;
-
-  // Find caption container
   const container = document.querySelector('.ytp-caption-window-container');
-  if (container) {
-    startObserving(container);
-    return;
-  }
+  if (container) { setupObserver(container); return; }
 
-  // Retry up to 15 seconds
   let retries = 0;
   const timer = setInterval(() => {
     if (!active || retries > 15 || observer) { clearInterval(timer); return; }
     retries++;
     const el = document.querySelector('.ytp-caption-window-container');
-    if (el) { clearInterval(timer); startObserving(el); }
+    if (el) { clearInterval(timer); setupObserver(el); }
   }, 1000);
 }
 
-function startObserving(container: Element): void {
+function setupObserver(container: Element): void {
   if (observer) return;
+  observeTarget = container;
   console.log('[IMT YT] Observing captions');
 
   observer = new MutationObserver(() => {
-    if (isUpdating) return; // skip our own DOM changes
-    handleCaptionChange(container);
+    // Debounce to avoid rapid-fire during caption transitions
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => onCaptionChange(), 100);
   });
 
-  observer.observe(container, { childList: true, subtree: true, characterData: true });
+  startObserving();
 }
 
-function handleCaptionChange(container: Element): void {
-  // Get only YouTube's original segments (exclude our translations)
-  const segments = container.querySelectorAll(`.ytp-caption-segment:not(.${TRANS_CLASS}-text)`);
+function startObserving(): void {
+  if (!observer || !observeTarget) return;
+  observer.observe(observeTarget, { childList: true, subtree: true, characterData: true });
+}
+
+function pauseObserving(): void {
+  observer?.disconnect();
+}
+
+function onCaptionChange(): void {
+  if (!observeTarget) return;
+
+  // Read original segments (exclude our translations)
+  const segments = observeTarget.querySelectorAll(`.ytp-caption-segment:not(.${TRANS_CLASS})`);
   if (segments.length === 0) {
+    pauseObserving();
     removeTranslations();
     lastText = '';
+    startObserving();
     return;
   }
 
@@ -100,40 +95,37 @@ function handleCaptionChange(container: Element): void {
   if (!text || text === lastText) return;
   lastText = text;
 
-  // Remove old translation (guard against re-entrant mutations)
-  isUpdating = true;
+  // Pause observer → modify DOM → resume observer
+  pauseObserving();
   removeTranslations();
 
-  // Find the caption window to append to
-  const captionWindow = container.querySelector('.caption-window');
-  if (!captionWindow) { isUpdating = false; return; }
+  const captionWindow = observeTarget.querySelector('.caption-window');
+  if (!captionWindow) { startObserving(); return; }
 
-  // Create translation line
   const transLine = document.createElement('span');
-  transLine.className = `caption-visual-line ${TRANS_CLASS}`;
-  transLine.style.cssText = 'display: block;';
+  transLine.className = TRANS_CLASS;
+  transLine.style.cssText = 'display: block; margin-top: 2px;';
 
-  const transSegment = document.createElement('span');
-  transSegment.className = `${TRANS_CLASS}-text`;
-  transSegment.style.cssText = 'color: #ffe066 !important; font-size: 0.9em; background: rgba(8,8,8,0.75); padding: 1px 4px;';
+  const transText = document.createElement('span');
+  transText.className = TRANS_CLASS; // also marked so excluded from query
+  transText.style.cssText = 'color: #ffe066; font-size: 0.9em; background: rgba(8,8,8,0.75); padding: 1px 6px; border-radius: 2px;';
 
-  // Check cache
   const cached = cache.get(text);
   if (cached) {
-    transSegment.textContent = cached;
+    transText.textContent = cached;
   } else {
-    transSegment.textContent = '...';
-    translateText(text, transSegment);
+    transText.textContent = '⋯';
+    translateAndUpdate(text, transText);
   }
 
-  transLine.appendChild(transSegment);
+  transLine.appendChild(transText);
   captionWindow.appendChild(transLine);
-  isUpdating = false;
+
+  // Resume observing after DOM modification
+  startObserving();
 }
 
-async function translateText(text: string, el: HTMLElement): Promise<void> {
-  pendingText = text;
-
+async function translateAndUpdate(text: string, el: HTMLElement): Promise<void> {
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'TRANSLATE',
@@ -141,17 +133,15 @@ async function translateText(text: string, el: HTMLElement): Promise<void> {
       lang: 'zh-TW',
       model: getModel(),
     });
-
-    // Only update if this is still the current caption
-    if (text !== pendingText) return;
-
     if (response?.translated) {
       cache.set(text, response.translated);
-      el.textContent = response.translated;
+      // Only update if element is still in DOM
+      if (el.isConnected) {
+        el.textContent = response.translated;
+      }
     }
   } catch (err) {
     console.error('[IMT YT] translate error:', err);
-    el.textContent = '';
   }
 }
 
@@ -163,14 +153,6 @@ function injectStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = `
-    .${TRANS_CLASS} {
-      display: block !important;
-      margin-top: 2px;
-    }
-    .${TRANS_CLASS} .ytp-caption-segment {
-      color: #ffe066 !important;
-    }
-  `;
+  style.textContent = `.${TRANS_CLASS} { pointer-events: none; }`;
   document.head?.appendChild(style);
 }
