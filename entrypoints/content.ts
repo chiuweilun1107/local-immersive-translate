@@ -3,6 +3,7 @@ import { injectTranslation, removeAllTranslations, injectLoadingPlaceholder, inj
 import { startSelectionTranslate, stopSelectionTranslate } from '../src/features/SelectionTranslate';
 import { startHoverTranslate, stopHoverTranslate } from '../src/features/HoverTranslate';
 import { startInputTranslate, stopInputTranslate } from '../src/features/InputTranslate';
+import { startYouTubeSubtitle, stopYouTubeSubtitle } from '../src/features/YouTubeSubtitle';
 
 const MAX_CONCURRENT = 2; // 同時最多 2 個 Ollama 請求
 
@@ -18,6 +19,7 @@ let selectionEnabled = true;
 let hoverEnabled = true;
 let inputEnabled = true;
 let streamEnabled = true;
+let youtubeSubEnabled = true;
 
 // 並發控制
 let activeCount = 0;
@@ -54,6 +56,10 @@ export default defineContentScript({
           else stopInputTranslate();
         } else if (feature === 'stream') {
           streamEnabled = enabled;
+        } else if (feature === 'youtube') {
+          youtubeSubEnabled = enabled;
+          if (enabled) startYouTubeSubtitle(() => currentModel);
+          else stopYouTubeSubtitle();
         }
       }
     });
@@ -73,7 +79,7 @@ export default defineContentScript({
     });
 
     chrome.storage.local.get(
-      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input', 'imt_stream'],
+      ['imt_enabled', 'imt_model', 'imt_mode', 'imt_selection', 'imt_hover', 'imt_input', 'imt_stream', 'imt_youtube'],
       (result) => {
         isEnabled = result.imt_enabled ?? false;
         currentModel = result.imt_model ?? 'qwen3:8b';
@@ -82,6 +88,7 @@ export default defineContentScript({
         hoverEnabled = result.imt_hover ?? true;
         inputEnabled = result.imt_input ?? true;
         streamEnabled = result.imt_stream ?? true;
+        youtubeSubEnabled = result.imt_youtube ?? true;
 
         if (isEnabled) startTranslation();
         initPhase2Features();
@@ -94,6 +101,7 @@ function initPhase2Features(): void {
   if (selectionEnabled) startSelectionTranslate(() => currentModel);
   if (hoverEnabled) startHoverTranslate(() => currentModel);
   if (inputEnabled) startInputTranslate(() => currentModel);
+  if (youtubeSubEnabled) startYouTubeSubtitle(() => currentModel);
 }
 
 function startTranslation(): void {

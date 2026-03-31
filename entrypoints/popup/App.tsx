@@ -18,6 +18,7 @@ export default function App() {
   const [hoverEnabled, setHoverEnabled] = useState(true);
   const [inputEnabled, setInputEnabled] = useState(true);
   const [streamEnabled, setStreamEnabled] = useState(true);
+  const [youtubeEnabled, setYoutubeEnabled] = useState(true);
 
   useEffect(() => {
     chrome.storage.local.get(
@@ -30,6 +31,7 @@ export default function App() {
         setHoverEnabled(result.imt_hover ?? true);
         setInputEnabled(result.imt_input ?? true);
         setStreamEnabled(result.imt_stream ?? true);
+        setYoutubeEnabled(result.imt_youtube ?? true);
       }
     );
     checkHealth();
@@ -83,6 +85,7 @@ export default function App() {
     else if (feature === 'hover') setHoverEnabled(next);
     else if (feature === 'input') setInputEnabled(next);
     else if (feature === 'stream') setStreamEnabled(next);
+    else if (feature === 'youtube') setYoutubeEnabled(next);
   }
 
   const displayModels = availableModels.length > 0 ? availableModels : MODELS;
@@ -177,6 +180,20 @@ export default function App() {
             type="checkbox"
             checked={hoverEnabled}
             onChange={() => toggleFeature('hover', hoverEnabled)}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="toggle-row">
+        <div className="toggle-info">
+          <span className="toggle-label">YouTube 字幕</span>
+          <span className="toggle-desc">影片雙語字幕</span>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={youtubeEnabled}
+            onChange={() => toggleFeature('youtube', youtubeEnabled)}
           />
           <span className="slider" />
         </label>

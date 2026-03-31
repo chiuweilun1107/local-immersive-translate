@@ -63,6 +63,14 @@ async function handleMessage(message: { type: string; [key: string]: unknown }) 
       return { translated, cached: false };
     }
 
+    case 'FETCH_CAPTIONS': {
+      const { url } = message as { url: string };
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Caption fetch failed: ${res.status}`);
+      const data = await res.json();
+      return { ok: true, data };
+    }
+
     case 'CLEAR_CACHE':
       await clearAllCache();
       return { ok: true };
