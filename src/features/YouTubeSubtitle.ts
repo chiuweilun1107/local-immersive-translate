@@ -1,14 +1,15 @@
-// YouTube Subtitle Translation — DOM observation approach
-// Watches YouTube's caption renderer and appends translated text below
+// YouTube Subtitle Translation — inject into YouTube's own caption container
 
-const OVERLAY_ID = 'imt-yt-overlay';
+const TRANS_CLASS = 'imt-yt-trans';
 const STYLE_ID = 'imt-yt-style';
 
 let active = false;
 let observer: MutationObserver | null = null;
+let navObserver: MutationObserver | null = null;
 let getModel: () => string = () => 'qwen3:8b';
-let lastOriginalText = '';
-let translationCache = new Map<string, string>();
+let lastText = '';
+let cache = new Map<string, string>();
+let pendingText = '';
 
 export function startYouTubeSubtitle(modelGetter: () => string): void {
   if (active) return;
@@ -17,10 +18,20 @@ export function startYouTubeSubtitle(modelGetter: () => string): void {
   getModel = modelGetter;
 
   injectStyles();
-  waitForPlayer();
+  tryObserve();
 
   // YouTube SPA navigation
   window.addEventListener('yt-navigate-finish', onNavigate);
+
+  // Fallback: URL change detection
+  let lastUrl = location.href;
+  navObserver = new MutationObserver(() => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      onNavigate();
+    }
+  });
+  navObserver.observe(document, { childList: true, subtree: true });
 }
 
 export function stopYouTubeSubtitle(): void {
@@ -28,86 +39,96 @@ export function stopYouTubeSubtitle(): void {
   window.removeEventListener('yt-navigate-finish', onNavigate);
   observer?.disconnect();
   observer = null;
-  removeOverlay();
-  lastOriginalText = '';
+  navObserver?.disconnect();
+  navObserver = null;
+  removeTranslations();
+  lastText = '';
 }
 
 function onNavigate(): void {
   if (!active) return;
   observer?.disconnect();
   observer = null;
-  removeOverlay();
-  lastOriginalText = '';
-  setTimeout(() => waitForPlayer(), 1500);
+  removeTranslations();
+  lastText = '';
+  setTimeout(() => tryObserve(), 1500);
 }
 
-// ── Wait for YouTube's caption container to appear ──
+function tryObserve(): void {
+  if (!active || observer) return;
 
-function waitForPlayer(): void {
-  if (!active) return;
-
+  // Find caption container
   const container = document.querySelector('.ytp-caption-window-container');
   if (container) {
     startObserving(container);
     return;
   }
 
-  // Retry: container might not exist yet
+  // Retry up to 15 seconds
   let retries = 0;
   const timer = setInterval(() => {
-    if (!active || retries > 15) { clearInterval(timer); return; }
+    if (!active || retries > 15 || observer) { clearInterval(timer); return; }
     retries++;
     const el = document.querySelector('.ytp-caption-window-container');
-    if (el) {
-      clearInterval(timer);
-      startObserving(el);
-    }
+    if (el) { clearInterval(timer); startObserving(el); }
   }, 1000);
 }
 
-// ── Observe caption changes ──
-
 function startObserving(container: Element): void {
   if (observer) return;
-
-  createOverlay();
   console.log('[IMT YT] Observing captions');
 
   observer = new MutationObserver(() => {
-    const segments = container.querySelectorAll('.ytp-caption-segment');
-    if (segments.length === 0) {
-      hideOverlay();
-      return;
-    }
-
-    // Combine all caption segments into one line
-    const text = Array.from(segments).map(s => s.textContent || '').join(' ').trim();
-    if (!text || text === lastOriginalText) return;
-    lastOriginalText = text;
-
-    translateCaption(text);
+    handleCaptionChange(container);
   });
 
   observer.observe(container, { childList: true, subtree: true, characterData: true });
 }
 
-// ── Translate and display ──
-
-async function translateCaption(text: string): Promise<void> {
-  const overlay = document.getElementById(OVERLAY_ID);
-  if (!overlay) return;
-
-  // Check cache first
-  const cached = translationCache.get(text);
-  if (cached) {
-    showTranslation(overlay, cached);
+function handleCaptionChange(container: Element): void {
+  // Get all caption segments
+  const segments = container.querySelectorAll('.ytp-caption-segment');
+  if (segments.length === 0) {
+    removeTranslations();
+    lastText = '';
     return;
   }
 
-  // Show loading state
-  overlay.textContent = '...';
-  overlay.style.display = 'block';
-  overlay.style.opacity = '0.5';
+  const text = Array.from(segments).map(s => s.textContent || '').join(' ').trim();
+  if (!text || text === lastText) return;
+  lastText = text;
+
+  // Remove old translation
+  removeTranslations();
+
+  // Find the caption window to append to
+  const captionWindow = container.querySelector('.caption-window');
+  if (!captionWindow) return;
+
+  // Create translation line matching YouTube's structure
+  const transLine = document.createElement('span');
+  transLine.className = `caption-visual-line ${TRANS_CLASS}`;
+  transLine.style.cssText = 'display: block;';
+
+  const transSegment = document.createElement('span');
+  transSegment.className = 'ytp-caption-segment';
+  transSegment.style.cssText = 'color: #ffe066 !important; font-size: 0.9em;';
+
+  // Check cache
+  const cached = cache.get(text);
+  if (cached) {
+    transSegment.textContent = cached;
+  } else {
+    transSegment.textContent = '...';
+    translateText(text, transSegment);
+  }
+
+  transLine.appendChild(transSegment);
+  captionWindow.appendChild(transLine);
+}
+
+async function translateText(text: string, el: HTMLElement): Promise<void> {
+  pendingText = text;
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -117,76 +138,34 @@ async function translateCaption(text: string): Promise<void> {
       model: getModel(),
     });
 
-    // Check if this is still the current caption
-    if (text !== lastOriginalText) return;
+    // Only update if this is still the current caption
+    if (text !== pendingText) return;
 
     if (response?.translated) {
-      translationCache.set(text, response.translated);
-      showTranslation(overlay, response.translated);
+      cache.set(text, response.translated);
+      el.textContent = response.translated;
     }
   } catch (err) {
     console.error('[IMT YT] translate error:', err);
+    el.textContent = '';
   }
 }
 
-function showTranslation(overlay: HTMLElement, text: string): void {
-  overlay.textContent = text;
-  overlay.style.display = 'block';
-  overlay.style.opacity = '1';
-}
-
-function hideOverlay(): void {
-  const overlay = document.getElementById(OVERLAY_ID);
-  if (overlay) overlay.style.display = 'none';
-  lastOriginalText = '';
-}
-
-// ── Overlay DOM ──
-
-function createOverlay(): void {
-  removeOverlay();
-  const player = document.querySelector('#movie_player');
-  if (!player) return;
-
-  const overlay = document.createElement('div');
-  overlay.id = OVERLAY_ID;
-  overlay.style.display = 'none';
-  (player as HTMLElement).appendChild(overlay);
-}
-
-function removeOverlay(): void {
-  document.getElementById(OVERLAY_ID)?.remove();
+function removeTranslations(): void {
+  document.querySelectorAll(`.${TRANS_CLASS}`).forEach(el => el.remove());
 }
 
 function injectStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
-
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    #${OVERLAY_ID} {
-      position: absolute;
-      bottom: 12%;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 60;
-      text-align: center;
-      pointer-events: none;
-      max-width: 80%;
-      color: #ffe066;
-      font-size: 1.1em;
-      line-height: 1.4;
-      padding: 4px 12px;
-      background: rgba(0, 0, 0, 0.75);
-      border-radius: 4px;
-      text-shadow: 0 1px 3px rgba(0,0,0,0.9);
-      font-family: 'YouTube Noto', Roboto, Arial, sans-serif;
-      transition: opacity 0.15s;
+    .${TRANS_CLASS} {
+      display: block !important;
+      margin-top: 2px;
     }
-    :fullscreen #${OVERLAY_ID},
-    :-webkit-full-screen #${OVERLAY_ID} {
-      font-size: 1.4em;
-      bottom: 10%;
+    .${TRANS_CLASS} .ytp-caption-segment {
+      color: #ffe066 !important;
     }
   `;
   document.head?.appendChild(style);
