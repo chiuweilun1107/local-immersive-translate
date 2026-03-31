@@ -72,52 +72,32 @@ function detectVideo(): void {
 }
 
 function extractCaptionTracks(): void {
-  // Try to get caption data from the page's script tags
-  const scripts = document.querySelectorAll('script');
+  if (!active) return;
+
+  // Find timedtext baseUrl directly from page scripts
   let captionUrl = '';
+  const scripts = document.querySelectorAll('script');
 
   for (const script of scripts) {
     const text = script.textContent || '';
-    if (!text.includes('captionTracks')) continue;
+    if (!text.includes('timedtext')) continue;
 
-    // Extract the captions JSON from ytInitialPlayerResponse
-    const match = text.match(/"captionTracks":\s*(\[.*?\])/);
-    if (!match) continue;
-
-    try {
-      const tracks = JSON.parse(match[1]);
-      // Prefer English, then first available track
-      const enTrack = tracks.find((t: { languageCode: string }) =>
-        t.languageCode === 'en' || t.languageCode.startsWith('en')
-      );
-      const track = enTrack || tracks[0];
-      if (track?.baseUrl) {
-        captionUrl = track.baseUrl;
-      }
-    } catch { /* parse error, skip */ }
-    break;
+    // Extract first baseUrl for timedtext endpoint
+    const match = text.match(/"baseUrl"\s*:\s*"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/);
+    if (match) {
+      captionUrl = match[1].replace(/\\u0026/g, '&');
+      break;
+    }
   }
 
   if (!captionUrl) {
     // Retry after a delay (page might not be fully loaded)
-    if (active) setTimeout(() => extractCaptionTracksFromDOM(), 2000);
+    if (active) setTimeout(() => extractCaptionTracks(), 2000);
     return;
   }
 
+  console.log('[IMT YT] Found caption URL');
   fetchAndTranslateCaptions(captionUrl);
-}
-
-function extractCaptionTracksFromDOM(): void {
-  if (!active) return;
-
-  // Alternative: look for timedtext in existing caption elements or network
-  // Try the ytInitialPlayerResponse approach via page source
-  const bodyText = document.body.innerHTML;
-  const match = bodyText.match(/"baseUrl":"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/);
-  if (match) {
-    const url = match[1].replace(/\\u0026/g, '&');
-    fetchAndTranslateCaptions(url);
-  }
 }
 
 // ── Fetch & Translate ──
