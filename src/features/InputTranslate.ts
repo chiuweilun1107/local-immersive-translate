@@ -1,23 +1,9 @@
-const DATA_ORIGINAL = 'data-imt-original';
 const BTN_ID = 'imt-translate-btn';
 
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 let mousemoveHandler: ((e: MouseEvent) => void) | null = null;
-let currentTarget: HTMLElement | null = null;
 let lastMouseX = 0;
 let lastMouseY = 0;
-
-// Walk up to find the actual editable root (INPUT/TEXTAREA or contenteditable root)
-function findEditableRoot(el: HTMLElement): HTMLElement {
-  let cur: HTMLElement | null = el;
-  while (cur) {
-    const tag = cur.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return cur;
-    if (cur.getAttribute('contenteditable') === 'true' || cur.getAttribute('contenteditable') === '') return cur;
-    cur = cur.parentElement;
-  }
-  return el;
-}
 
 function getInputText(el: HTMLElement): string {
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
@@ -26,128 +12,120 @@ function getInputText(el: HTMLElement): string {
   return el.innerText ?? el.textContent ?? '';
 }
 
-function setInputText(el: HTMLElement, text: string): void {
+function replaceInputText(el: HTMLElement, text: string): void {
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-    (el as HTMLInputElement | HTMLTextAreaElement).value = text;
+    const nativeSet = Object.getOwnPropertyDescriptor(
+      el.tagName === 'INPUT' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+      'value'
+    )?.set;
+    nativeSet?.call(el, text);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   } else {
-    // contenteditable: use execCommand for proper React/framework event triggering
+    // contenteditable: use InputEvent to work with modern editors (Lexical, ProseMirror)
     el.focus();
-    document.execCommand('selectAll', false, undefined);
-    document.execCommand('insertText', false, text);
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    // Try execCommand first, fallback to direct manipulation
+    const ok = document.execCommand('insertText', false, text);
+    if (!ok) {
+      el.textContent = text;
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+    }
   }
+}
+
+function findEditableRoot(el: HTMLElement): HTMLElement {
+  let cur: HTMLElement | null = el;
+  while (cur) {
+    if (cur.tagName === 'INPUT' || cur.tagName === 'TEXTAREA') return cur;
+    if (cur.getAttribute('contenteditable') === 'true' || cur.getAttribute('contenteditable') === '') return cur;
+    cur = cur.parentElement;
+  }
+  return el;
 }
 
 function isInputTarget(el: EventTarget | null): el is HTMLElement {
   if (!el || !(el instanceof HTMLElement)) return false;
-  const tag = (el as HTMLElement).tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
-  if ((el as HTMLElement).isContentEditable) return true;
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true;
+  if (el.isContentEditable) return true;
   return false;
 }
 
-function hasTrailingSpace(el: HTMLElement): boolean {
-  const text = getInputText(el);
-  return text.length >= 1 && text.slice(-1) === ' ';
+function hasChinese(text: string): boolean {
+  return /[\u4e00-\u9fff]/.test(text);
 }
 
-function hasChinese(el: HTMLElement): boolean {
-  return /[\u4e00-\u9fff]/.test(getInputText(el));
+function removeButton(): void {
+  document.getElementById(BTN_ID)?.remove();
 }
 
 function showButton(el: HTMLElement, getModel: () => string): void {
   removeButton();
-  currentTarget = el;
 
   const btn = document.createElement('div');
   btn.id = BTN_ID;
-  btn.textContent = '中 → 英';
+  btn.innerHTML = '<span style="pointer-events:none;">中 → 英</span>';
   btn.style.cssText = `
     position: fixed;
     z-index: 2147483647;
-    padding: 4px 10px;
+    padding: 6px 14px;
     background: #ff6b9d;
     color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
-    border-radius: 12px;
+    border-radius: 14px;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
     user-select: none;
-    transition: opacity 0.15s;
+    pointer-events: auto;
+    left: ${Math.min(lastMouseX + 12, window.innerWidth - 100)}px;
+    top: ${Math.min(lastMouseY - 36, window.innerHeight - 40)}px;
   `;
 
-  // Position near last known mouse cursor
-  const x = lastMouseX;
-  const y = lastMouseY;
-  btn.style.left = `${Math.min(x + 12, window.innerWidth - 90)}px`;
-  btn.style.top = `${Math.min(y + 16, window.innerHeight - 40)}px`;
-
-  const handleClick = async (e: MouseEvent) => {
+  // Use onclick (simplest, most reliable)
+  btn.onclick = async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    btn.textContent = '翻譯中...';
-    btn.style.opacity = '0.6';
-    removeButton();
 
-    const rawText = getInputText(el).trimEnd(); // strip trailing spaces
-    if (!rawText) return;
+    // Visual feedback: keep button visible, show loading
+    btn.innerHTML = '<span style="pointer-events:none;">翻譯中...</span>';
+    btn.style.opacity = '0.7';
+    btn.style.pointerEvents = 'none';
 
-    // Show loading inline without execCommand (just visual feedback)
-    const isNative = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
-    if (isNative) {
-      (el as HTMLInputElement).value = '翻譯中...';
-    }
+    const rawText = getInputText(el).trimEnd();
+    if (!rawText) { removeButton(); return; }
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'TRANSLATE',
         text: rawText,
-        lang: 'en', // 中文 → 英文
+        lang: 'en',
         model: getModel(),
       });
 
-      const result = response?.translated ?? (el.getAttribute(DATA_ORIGINAL) ?? rawText);
-      // Re-focus before execCommand (async breaks focus state)
-      el.focus();
-      if (isNative) {
-        (el as HTMLInputElement).value = result;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        document.execCommand('selectAll', false, undefined);
-        document.execCommand('insertText', false, result);
-      }
+      removeButton();
 
-      if (response?.error) {
+      if (response?.translated) {
+        el.focus();
+        // Small delay to ensure focus is established
+        await new Promise(r => setTimeout(r, 50));
+        replaceInputText(el, response.translated);
+      } else if (response?.error) {
         console.error('[IMT Input] error:', response.error);
       }
     } catch (err) {
-      el.focus();
-      if (isNative) {
-        (el as HTMLInputElement).value = rawText;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        document.execCommand('selectAll', false, undefined);
-        document.execCommand('insertText', false, rawText);
-      }
+      removeButton();
       console.error('[IMT Input] sendMessage failed:', err);
     }
   };
 
-  btn.addEventListener('mousedown', handleClick);
-  btn.addEventListener('click', handleClick);
-  document.documentElement.appendChild(btn);
-
-  // Auto-hide on blur (delayed so mousedown on button fires first)
-  const hide = () => { setTimeout(() => removeButton(), 300); el.removeEventListener('blur', hide); };
-  el.addEventListener('blur', hide);
-}
-
-function removeButton(): void {
-  const btn = document.getElementById(BTN_ID);
-  if (btn) btn.remove();
-  currentTarget = null;
+  document.body.appendChild(btn);
 }
 
 export function startInputTranslate(getModel: () => string): void {
@@ -160,21 +138,19 @@ export function startInputTranslate(getModel: () => string): void {
   document.addEventListener('mousemove', mousemoveHandler, { passive: true });
 
   keydownHandler = (e: KeyboardEvent) => {
-    // Hide button on any non-space key
     if (e.key !== ' ') {
       removeButton();
       return;
     }
 
-    // composedPath()[0] 穿透 Shadow DOM 拿到真實 target
     const target = (e.composedPath?.()[0] ?? e.target) as EventTarget;
     if (!isInputTarget(target)) return;
 
-    // Walk up to the actual editable root (handles contenteditable children)
     const el = findEditableRoot(target as HTMLElement);
+    const text = getInputText(el);
 
-    // Show button only when input has Chinese and user types 2nd space
-    if (hasTrailingSpace(el) && hasChinese(el)) {
+    // Show button when: has Chinese content + ends with at least 1 space
+    if (text.slice(-1) === ' ' && hasChinese(text)) {
       showButton(el, getModel);
     }
   };
