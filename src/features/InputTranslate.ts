@@ -133,7 +133,7 @@ function showButton(el: HTMLElement, getModel: () => string): void {
       }
       console.error('[IMT Input] sendMessage failed:', err);
     }
-  });
+  };
 
   btn.addEventListener('mousedown', handleClick);
   btn.addEventListener('click', handleClick);
