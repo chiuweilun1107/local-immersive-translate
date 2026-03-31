@@ -84,9 +84,11 @@ function showButton(el: HTMLElement, getModel: () => string): void {
   btn.style.left = `${Math.min(x + 12, window.innerWidth - 90)}px`;
   btn.style.top = `${Math.min(y + 16, window.innerHeight - 40)}px`;
 
-  btn.addEventListener('mousedown', async (e) => {
+  const handleClick = async (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    btn.textContent = '翻譯中...';
+    btn.style.opacity = '0.6';
     removeButton();
 
     const rawText = getInputText(el).trimEnd(); // strip trailing spaces
@@ -133,6 +135,8 @@ function showButton(el: HTMLElement, getModel: () => string): void {
     }
   });
 
+  btn.addEventListener('mousedown', handleClick);
+  btn.addEventListener('click', handleClick);
   document.documentElement.appendChild(btn);
 
   // Auto-hide on blur or next non-space keydown
