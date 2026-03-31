@@ -2,7 +2,10 @@ const DATA_ORIGINAL = 'data-imt-original';
 const BTN_ID = 'imt-translate-btn';
 
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+let mousemoveHandler: ((e: MouseEvent) => void) | null = null;
 let currentTarget: HTMLElement | null = null;
+let lastMouseX = 0;
+let lastMouseY = 0;
 
 function getInputText(el: HTMLElement): string {
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
@@ -57,10 +60,11 @@ function showButton(el: HTMLElement, getModel: () => string): void {
     transition: opacity 0.15s;
   `;
 
-  // Position at bottom-right of input element
-  const rect = el.getBoundingClientRect();
-  btn.style.left = `${Math.min(rect.right - 80, window.innerWidth - 90)}px`;
-  btn.style.top = `${rect.bottom + 6}px`;
+  // Position near last known mouse cursor
+  const x = lastMouseX;
+  const y = lastMouseY;
+  btn.style.left = `${Math.min(x + 12, window.innerWidth - 90)}px`;
+  btn.style.top = `${Math.min(y + 16, window.innerHeight - 40)}px`;
 
   btn.addEventListener('mousedown', async (e) => {
     e.preventDefault();
@@ -109,6 +113,12 @@ function removeButton(): void {
 export function startInputTranslate(getModel: () => string): void {
   if (keydownHandler) return;
 
+  mousemoveHandler = (e: MouseEvent) => {
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+  };
+  document.addEventListener('mousemove', mousemoveHandler, { passive: true });
+
   keydownHandler = (e: KeyboardEvent) => {
     // Hide button on any non-space key
     if (e.key !== ' ') {
@@ -135,6 +145,10 @@ export function stopInputTranslate(): void {
   if (keydownHandler) {
     document.removeEventListener('keydown', keydownHandler, true);
     keydownHandler = null;
+  }
+  if (mousemoveHandler) {
+    document.removeEventListener('mousemove', mousemoveHandler);
+    mousemoveHandler = null;
   }
   removeButton();
 }
