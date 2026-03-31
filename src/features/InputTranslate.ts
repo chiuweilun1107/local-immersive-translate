@@ -92,6 +92,7 @@ function showButton(el: HTMLElement, getModel: () => string): void {
   btn.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    console.log('[IMT Input] button clicked');
 
     // Visual feedback
     btn.textContent = '翻譯中...';
@@ -99,23 +100,26 @@ function showButton(el: HTMLElement, getModel: () => string): void {
     btn.style.opacity = '0.7';
 
     const rawText = getInputText(el).trimEnd();
-    if (!rawText) { removeButton(); return; }
+    console.log('[IMT Input] rawText:', rawText, 'el:', el.tagName, el.getAttribute('contenteditable'));
+    if (!rawText) { console.log('[IMT Input] empty text, abort'); removeButton(); return; }
 
     try {
+      console.log('[IMT Input] sending translate request...');
       const response = await chrome.runtime.sendMessage({
         type: 'TRANSLATE',
         text: rawText,
         lang: 'en',
         model: getModel(),
       });
+      console.log('[IMT Input] response:', response);
 
       removeButton();
 
       if (response?.translated) {
         el.focus();
-        // Small delay to ensure focus is established
         await new Promise(r => setTimeout(r, 50));
         replaceInputText(el, response.translated);
+        console.log('[IMT Input] text replaced');
       } else if (response?.error) {
         console.error('[IMT Input] error:', response.error);
       }
