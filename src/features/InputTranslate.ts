@@ -37,6 +37,10 @@ function hasTrailingSpace(el: HTMLElement): boolean {
   return text.length >= 1 && text.slice(-1) === ' ';
 }
 
+function hasChinese(el: HTMLElement): boolean {
+  return /[\u4e00-\u9fff]/.test(getInputText(el));
+}
+
 function showButton(el: HTMLElement, getModel: () => string): void {
   removeButton();
   currentTarget = el;
@@ -132,8 +136,8 @@ export function startInputTranslate(getModel: () => string): void {
 
     const el = target as HTMLElement;
 
-    // Show button when user types 2nd space (input already ends with one space)
-    if (hasTrailingSpace(el)) {
+    // Show button only when input has Chinese and user types 2nd space
+    if (hasTrailingSpace(el) && hasChinese(el)) {
       showButton(el, getModel);
     }
   };
