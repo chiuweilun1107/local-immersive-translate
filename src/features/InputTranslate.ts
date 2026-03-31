@@ -7,11 +7,23 @@ let currentTarget: HTMLElement | null = null;
 let lastMouseX = 0;
 let lastMouseY = 0;
 
+// Walk up to find the actual editable root (INPUT/TEXTAREA or contenteditable root)
+function findEditableRoot(el: HTMLElement): HTMLElement {
+  let cur: HTMLElement | null = el;
+  while (cur) {
+    const tag = cur.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return cur;
+    if (cur.getAttribute('contenteditable') === 'true' || cur.getAttribute('contenteditable') === '') return cur;
+    cur = cur.parentElement;
+  }
+  return el;
+}
+
 function getInputText(el: HTMLElement): string {
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
     return (el as HTMLInputElement | HTMLTextAreaElement).value;
   }
-  return el.textContent ?? '';
+  return el.innerText ?? el.textContent ?? '';
 }
 
 function setInputText(el: HTMLElement, text: string): void {
@@ -19,8 +31,10 @@ function setInputText(el: HTMLElement, text: string): void {
     (el as HTMLInputElement | HTMLTextAreaElement).value = text;
     el.dispatchEvent(new Event('input', { bubbles: true }));
   } else {
-    el.textContent = text;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    // contenteditable: use execCommand for proper React/framework event triggering
+    el.focus();
+    document.execCommand('selectAll', false, undefined);
+    document.execCommand('insertText', false, text);
   }
 }
 
@@ -134,7 +148,8 @@ export function startInputTranslate(getModel: () => string): void {
     const target = (e.composedPath?.()[0] ?? e.target) as EventTarget;
     if (!isInputTarget(target)) return;
 
-    const el = target as HTMLElement;
+    // Walk up to the actual editable root (handles contenteditable children)
+    const el = findEditableRoot(target as HTMLElement);
 
     // Show button only when input has Chinese and user types 2nd space
     if (hasTrailingSpace(el) && hasChinese(el)) {
