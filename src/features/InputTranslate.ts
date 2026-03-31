@@ -139,8 +139,8 @@ function showButton(el: HTMLElement, getModel: () => string): void {
   btn.addEventListener('click', handleClick);
   document.documentElement.appendChild(btn);
 
-  // Auto-hide on blur or next non-space keydown
-  const hide = () => { removeButton(); el.removeEventListener('blur', hide); };
+  // Auto-hide on blur (delayed so mousedown on button fires first)
+  const hide = () => { setTimeout(() => removeButton(), 300); el.removeEventListener('blur', hide); };
   el.addEventListener('blur', hide);
 }
 
