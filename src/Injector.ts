@@ -53,6 +53,8 @@ export function injectTranslation(
   mode: 'bilingual' | 'translation_only' = 'bilingual'
 ): void {
   injectGlobalStyles();
+  // Skip if already has a translation
+  if (el.querySelector(`.${IMT_CLASS}`)) return;
   removeExistingBilingual(el);
 
   if (mode === 'translation_only') {
@@ -82,6 +84,8 @@ export function removeAllTranslations(): void {
 
 export function injectStreamSpan(el: Element): HTMLElement {
   injectGlobalStyles();
+  const existing = el.querySelector(`.${IMT_CLASS}`);
+  if (existing) return existing as HTMLElement;
   removeExistingBilingual(el);
   const span = document.createElement('span');
   span.className = IMT_CLASS;

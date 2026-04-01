@@ -85,8 +85,13 @@ function _scanRoot(root: Element | ShadowRoot, results: Element[]): void {
 
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    results.push(node as Element);
-    const shadow = (node as Element).shadowRoot;
+    const el = node as Element;
+    // Skip if a parent is already in results (prevents double translation)
+    const hasTranslatedParent = results.some(r => r.contains(el) && r !== el);
+    if (!hasTranslatedParent) {
+      results.push(el);
+    }
+    const shadow = el.shadowRoot;
     if (shadow) _scanRoot(shadow, results);
   }
 

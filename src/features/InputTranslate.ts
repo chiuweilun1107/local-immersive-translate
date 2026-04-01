@@ -46,15 +46,19 @@ function isInputTarget(el: EventTarget | null): el is HTMLElement {
   return false;
 }
 
-function hasChinese(text: string): boolean {
-  return /[\u4e00-\u9fff]/.test(text);
+function detectLang(text: string): 'zh' | 'en' | null {
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+  const latin = (text.match(/[a-zA-Z]/g) || []).length;
+  if (cjk / text.length > 0.3) return 'zh';
+  if (latin / text.length > 0.5) return 'en';
+  return null;
 }
 
 function removePanel(): void {
   document.getElementById(PANEL_ID)?.remove();
 }
 
-function showPanel(el: HTMLElement, translated: string): void {
+function showPanel(el: HTMLElement, translated: string, dirLabel = '翻譯'): void {
   removePanel();
 
   const rect = el.getBoundingClientRect();
@@ -78,7 +82,7 @@ function showPanel(el: HTMLElement, translated: string): void {
   // Header (draggable)
   const header = document.createElement('div');
   header.style.cssText = 'padding: 8px 12px; background: #f8f8f8; border-bottom: 1px solid #eee; font-size: 11px; color: #999; font-weight: 600; letter-spacing: 0.5px; cursor: grab; user-select: none;';
-  header.textContent = '中 → 英 翻譯預覽';
+  header.textContent = `${dirLabel} 翻譯預覽`;
   panel.appendChild(header);
 
   // Drag logic
@@ -159,11 +163,14 @@ export function startInputTranslate(getModel: () => string): void {
 
     const el = findEditableRoot(target as HTMLElement);
     const rawText = getInputText(el).trim();
-
-    if (!rawText || !hasChinese(rawText)) return;
+    const sourceLang = detectLang(rawText);
+    if (!rawText || !sourceLang) return;
 
     e.preventDefault();
     e.stopPropagation();
+
+    const targetLang = sourceLang === 'zh' ? 'en' : 'zh-TW';
+    const dirLabel = sourceLang === 'zh' ? '中 → 英' : '英 → 中';
 
     // Show loading panel
     removePanel();
@@ -180,21 +187,21 @@ export function startInputTranslate(getModel: () => string): void {
       font-size: 13px; color: #999;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     `;
-    loadingPanel.textContent = '翻譯中...';
+    loadingPanel.textContent = `${dirLabel} 翻譯中...`;
     document.body.appendChild(loadingPanel);
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'TRANSLATE',
         text: rawText,
-        lang: 'en',
+        lang: targetLang,
         model: getModel(),
       });
 
       removePanel();
 
       if (response?.translated) {
-        showPanel(el, response.translated);
+        showPanel(el, response.translated, dirLabel);
       } else if (response?.error) {
         console.error('[IMT Input] error:', response.error);
       }
