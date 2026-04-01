@@ -1,7 +1,8 @@
 const SKIP_TAGS = new Set([
   'SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA', 'INPUT',
   'SELECT', 'BUTTON', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS',
-  'IMG', 'VIDEO', 'AUDIO', 'BR', 'HR',
+  'IMG', 'VIDEO', 'AUDIO', 'BR', 'HR', 'LINK', 'META',
+  'TEMPLATE', 'SLOT', 'OPTION', 'LABEL',
 ]);
 
 // Tags that are always worth scanning (traditional block text elements)
@@ -23,6 +24,10 @@ const SITE_SELECTORS = [
 ];
 
 export function scanParagraphs(root: Document | Element = document): Element[] {
+  // Skip pages already in target language (zh)
+  const htmlLang = document.documentElement.lang?.toLowerCase() || '';
+  if (htmlLang.startsWith('zh')) return [];
+
   const results: Element[] = [];
   const rootEl = root instanceof Document ? root.body : root;
   _scanRoot(rootEl, results);
@@ -94,10 +99,19 @@ function _scanRoot(root: Element | ShadowRoot, results: Element[]): void {
 /**
  * A "text leaf" is an element that contains substantial text
  * but doesn't have child elements that individually contain substantial text.
- * This catches DIV, SPAN, ARTICLE, etc. on sites like Twitter/X.
  */
 function isTextLeaf(el: Element): boolean {
-  // If no children at all, it's definitely a leaf
+  // Skip hidden or zero-size elements
+  const style = el instanceof HTMLElement ? el.style : null;
+  if (style?.display === 'none' || style?.visibility === 'hidden') return false;
+  if ((el as HTMLElement).offsetHeight === 0) return false;
+
+  // Skip elements that look like code/data (class or id hints)
+  const cls = el.className?.toString?.() || '';
+  const id = el.id || '';
+  if (/script|style|json|code|data-|hidden|sr-only/i.test(cls + id)) return false;
+
+  // If no children at all, it's a leaf
   if (el.children.length === 0) return true;
 
   // Check: does any single child element have substantial text?
@@ -105,7 +119,7 @@ function isTextLeaf(el: Element): boolean {
     if (SKIP_TAGS.has(child.tagName)) continue;
     const childText = child.textContent?.trim() || '';
     if (childText.length >= MIN_TEXT_LENGTH) {
-      return false; // has a child with enough text → not a leaf, keep walking
+      return false; // has a child with enough text → not a leaf
     }
   }
 
@@ -121,6 +135,10 @@ export function isTranslated(el: Element): boolean {
 }
 
 function isMainlyLatin(text: string): boolean {
+  // Skip if text is mostly CJK (Chinese/Japanese/Korean)
+  const cjkCount = (text.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
+  if (cjkCount / text.length > 0.3) return false;
+
   const latinCount = (text.match(/[a-zA-Z]/g) || []).length;
-  return latinCount / text.length > 0.4;
+  return latinCount / text.length > 0.5;
 }
