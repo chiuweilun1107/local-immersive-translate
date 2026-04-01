@@ -1,18 +1,25 @@
 const SKIP_TAGS = new Set([
   'SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA', 'INPUT',
   'SELECT', 'BUTTON', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS',
+  'IMG', 'VIDEO', 'AUDIO', 'BR', 'HR',
 ]);
+
+// Tags that are always worth scanning (traditional block text elements)
+const BLOCK_TEXT_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'TD', 'TH', 'FIGCAPTION', 'CAPTION']);
+
+// Tags to skip as navigation/chrome (not content)
+const NAV_SELECTORS = 'nav, header, footer, aside, [role="navigation"], [role="banner"], [role="toolbar"], [role="tablist"]';
 
 const MIN_TEXT_LENGTH = 20;
 const TRANSLATED_ATTR = 'data-imt-done';
-const SCAN_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'LI', 'BLOCKQUOTE', 'TD', 'TH']);
 
-// 網站專屬 selector：用於抓 TreeWalker 掃不到的標題元素
-// 注意：必須指向最葉層的文字節點容器，避免 textContent 混入 badge/hidden 元素
+// Site-specific selectors for elements TreeWalker can't easily reach
 const SITE_SELECTORS = [
-  'div[slot="title"] > a',      // Reddit shreddit: 只取標題 <a>，排除 badge 子元素
-  'div[slot="text-body"] > p',  // Reddit shreddit post body paragraphs
-  '[data-testid="post-title"] > a', // Reddit old design
+  'div[slot="title"] > a',      // Reddit shreddit
+  'div[slot="text-body"] > p',  // Reddit shreddit
+  '[data-testid="post-title"] > a', // Reddit old
+  '[data-testid="tweetText"]',  // Twitter/X tweet text
+  'article [lang]',             // Twitter/X content with lang attr
 ];
 
 export function scanParagraphs(root: Document | Element = document): Element[] {
@@ -28,18 +35,15 @@ function _scanSiteSelectors(root: Element, results: Element[]): void {
   SITE_SELECTORS.forEach((selector) => {
     try {
       root.querySelectorAll(selector).forEach((el) => {
-        if (seen.has(el)) return;
-        if (el.hasAttribute(TRANSLATED_ATTR)) return;
-        if (el.closest('nav, header, footer, aside, [role="navigation"], [role="banner"]')) return;
+        if (seen.has(el) || el.hasAttribute(TRANSLATED_ATTR)) return;
+        if (el.closest(NAV_SELECTORS)) return;
         const text = el.textContent?.trim() || '';
         if (text.length >= MIN_TEXT_LENGTH && isMainlyLatin(text)) {
           results.push(el);
           seen.add(el);
         }
       });
-    } catch {
-      // ignore invalid selectors
-    }
+    } catch { /* skip */ }
   });
 }
 
@@ -52,15 +56,23 @@ function _scanRoot(root: Element | ShadowRoot, results: Element[]): void {
         const el = node as Element;
         if (SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
         if (el.hasAttribute(TRANSLATED_ATTR)) return NodeFilter.FILTER_REJECT;
-        if (el.closest('nav, header, footer, aside, [role="navigation"], [role="banner"]')) {
-          return NodeFilter.FILTER_REJECT;
+        if (el.closest(NAV_SELECTORS)) return NodeFilter.FILTER_REJECT;
+
+        const text = el.textContent?.trim() || '';
+        if (text.length < MIN_TEXT_LENGTH) return NodeFilter.FILTER_SKIP;
+        if (!isMainlyLatin(text)) return NodeFilter.FILTER_SKIP;
+
+        // Known block text tags: always accept
+        if (BLOCK_TEXT_TAGS.has(el.tagName)) {
+          return NodeFilter.FILTER_ACCEPT;
         }
-        if (SCAN_TAGS.has(el.tagName)) {
-          const text = el.textContent?.trim() || '';
-          if (text.length >= MIN_TEXT_LENGTH && isMainlyLatin(text)) {
-            return NodeFilter.FILTER_ACCEPT;
-          }
+
+        // Universal detection: accept if this is a "text leaf"
+        // A text leaf = has enough text but no child elements that also have enough text
+        if (isTextLeaf(el)) {
+          return NodeFilter.FILTER_ACCEPT;
         }
+
         return NodeFilter.FILTER_SKIP;
       },
     }
@@ -69,15 +81,35 @@ function _scanRoot(root: Element | ShadowRoot, results: Element[]): void {
   let node: Node | null;
   while ((node = walker.nextNode())) {
     results.push(node as Element);
-    // 進入 Shadow DOM
     const shadow = (node as Element).shadowRoot;
     if (shadow) _scanRoot(shadow, results);
   }
 
-  // 掃描此層直接子元素中有 shadow root 的宿主
+  // Shadow DOM scan
   root.querySelectorAll('*').forEach((el) => {
     if (el.shadowRoot) _scanRoot(el.shadowRoot, results);
   });
+}
+
+/**
+ * A "text leaf" is an element that contains substantial text
+ * but doesn't have child elements that individually contain substantial text.
+ * This catches DIV, SPAN, ARTICLE, etc. on sites like Twitter/X.
+ */
+function isTextLeaf(el: Element): boolean {
+  // If no children at all, it's definitely a leaf
+  if (el.children.length === 0) return true;
+
+  // Check: does any single child element have substantial text?
+  for (const child of el.children) {
+    if (SKIP_TAGS.has(child.tagName)) continue;
+    const childText = child.textContent?.trim() || '';
+    if (childText.length >= MIN_TEXT_LENGTH) {
+      return false; // has a child with enough text → not a leaf, keep walking
+    }
+  }
+
+  return true;
 }
 
 export function markTranslated(el: Element): void {
