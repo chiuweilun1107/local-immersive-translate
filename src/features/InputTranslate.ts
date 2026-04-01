@@ -155,8 +155,8 @@ export function startInputTranslate(getModel: () => string): void {
   if (keydownHandler) return;
 
   keydownHandler = async (e: KeyboardEvent) => {
-    // ⌥+Enter (Option+Enter) triggers translation
-    if (!(e.altKey && e.key === 'Enter')) return;
+    // ⌥+T (Option+T) triggers translation — avoids Enter conflicts in chat apps
+    if (!(e.altKey && e.code === 'KeyT')) return;
 
     const target = (e.composedPath?.()[0] ?? e.target) as EventTarget;
     if (!isInputTarget(target)) return;

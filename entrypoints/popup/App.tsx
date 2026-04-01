@@ -215,7 +215,7 @@ export default function App() {
       <div className="toggle-row">
         <div className="toggle-info">
           <span className="toggle-label">輸入框翻譯</span>
-          <span className="toggle-desc">⌥+Enter 中英互譯</span>
+          <span className="toggle-desc">⌥+T 中英互譯</span>
         </div>
         <label className="switch">
           <input
